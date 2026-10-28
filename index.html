@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zakat</title>
+<meta name="theme-color" content="#f4f3ef">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Zakat">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  /* Appli téléphone une colonne : onglets Comptes / Crédits / Zakat, panneaux qui montent du bas */
+  :root {
+    --bg: #f4f3ef; --surface: #ffffff; --surface-2: #ecebe5; --line: #dddbd2;
+    --fg: #1b2a24; --muted: #5b6b64; --faint: #9aa59f;
+    --accent: #1f6b52; --accent-fg: #ffffff; --accent-soft: #e3efe9;
+    --ok: #1f6b52; --warn: #9a5b00; --warn-bg: #f6eedb; --danger: #b3261e; --danger-bg: #fdecea;
+    --hero: #1f6b52; --hero-fg: #ffffff; --hero-muted: #cfe6dc;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1412; --surface: #18201d; --surface-2: #222b27; --line: #2d3833;
+      --fg: #eef3f0; --muted: #9db0a7; --faint: #5f6f68;
+      --accent: #46b78d; --accent-fg: #06130e; --accent-soft: #1c3229;
+      --ok: #46b78d; --warn: #f0b24f; --warn-bg: #33281a; --danger: #ff7b72; --danger-bg: #3a1d1b;
+      --hero: #1d5a45; --hero-fg: #ffffff; --hero-muted: #b9dccd;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
+  [hidden] { display: none !important; }
+  .wrap { max-width: 560px; margin: 0 auto; padding-inline: 16px;
+    padding-block: calc(12px + env(safe-area-inset-top, 0px)) calc(100px + env(safe-area-inset-bottom, 0px)); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  header h1 { font-size: 26px; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .hbtns { display: flex; gap: 8px; }
+  .icon-btn { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; width: 44px; height: 44px;
+    display: inline-grid; place-items: center; padding: 0; }
+  .icon-btn.spin svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
+  .tab { border: 0; background: transparent; border-radius: 9px; padding: 10px 4px; font-weight: 700; font-size: 14.5px; color: var(--muted); }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .hero { background: var(--hero); color: var(--hero-fg); border-radius: 20px; padding: 18px 18px 14px; }
+  .hero .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .hero .lbl { color: var(--hero-muted); font-size: 13.5px; }
+  .hero .big { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin: 8px 0 8px; font-variant-numeric: tabular-nums; }
+  .hero .line { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 14px; color: var(--hero-muted); }
+  .hero .line b { color: var(--hero-fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge { background: #fff; color: #16503d; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .badge.off { background: rgba(255,255,255,.18); color: #fff; }
+  .rates { color: var(--muted); font-size: 12.5px; margin: 8px 2px 0; line-height: 1.4; }
+  h2 { font-size: 16px; font-weight: 700; margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  h2 button { border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 14px; padding: 6px 0; }
+  .list { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 0; border-top: 1px solid var(--line); width: 100%; background: none; text-align: left; }
+  .item:first-child { border-top: 0; }
+  .item .av { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: var(--accent); }
+  .item .av.soft { background: var(--accent-soft); color: var(--accent); }
+  .item .mid { flex: 1; min-width: 0; }
+  .item .mid div { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item small { color: var(--muted); display: block; font-size: 12.5px; margin-top: 2px; }
+  .item .amt { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+  .item .amt small { font-weight: 500; }
+  .item.empty { color: var(--muted); justify-content: center; padding: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+  .loan .head { display: flex; align-items: center; gap: 8px; }
+  .loan .name { font-weight: 700; font-size: 16px; flex: 1; min-width: 0; }
+  .loan .meta { color: var(--muted); font-size: 13px; margin-top: 3px; line-height: 1.4; }
+  .loan .meta.risk { color: var(--warn); }
+  .pill { font-size: 11.5px; font-weight: 800; border-radius: 999px; padding: 3px 9px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.late { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
+  .pill.soon { color: var(--warn); border-color: var(--warn); }
+  .bar { height: 7px; background: var(--surface-2); border-radius: 4px; margin: 10px 0 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .loan .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .loan .foot b { font-variant-numeric: tabular-nums; }
+  .loan .hist { color: var(--muted); font-size: 12.5px; margin-top: 8px; line-height: 1.5; }
+  .linkish { border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 14px; padding: 8px 0; }
+  .alert { display: flex; gap: 10px; align-items: flex-start; border-radius: 14px; padding: 12px 14px; margin-top: 10px; font-size: 14px; line-height: 1.4; background: var(--warn-bg); color: var(--warn); }
+  .alert.late { background: var(--danger-bg); color: var(--danger); }
+  .note { color: var(--muted); font-size: 13px; line-height: 1.45; margin: 10px 2px 0; }
+  .fab { position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 528px; margin: 0 auto;
+    background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 16px; padding: 16px; font-size: 16px; font-weight: 800; z-index: 5;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 11px 13px; min-width: 0; }
+  .kpi .l { font-size: 12px; color: var(--muted); }
+  .kpi .v { font-size: 19px; font-weight: 800; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); z-index: 11; max-width: 560px; margin: 0 auto;
+    border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    transform: translateY(105%); transition: transform .2s ease; max-height: 92vh; overflow-y: auto; visibility: hidden; }
+  .sheet.open { transform: none; visibility: visible; }
+  .sheet h3 { margin: 0 0 4px; font-size: 19px; padding-right: 48px; }
+  .sheet-bar { position: sticky; top: -18px; z-index: 2; height: 0; display: flex; justify-content: flex-end; }
+  .sheet-x { width: 40px; height: 40px; margin-top: -6px; margin-right: -4px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--fg); font-size: 18px; font-weight: 700; display: grid; place-items: center; }
+  .sheet .cur { color: var(--muted); font-size: 13.5px; margin-bottom: 12px; line-height: 1.45; }
+  .sheet label.f { display: block; font-size: 12.5px; color: var(--muted); font-weight: 700; margin: 4px 0 6px; }
+  .sheet input, .sheet select { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 12px; font: inherit; font-size: 17px; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+  .sheet input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 8px 15px; font-size: 15px; font-weight: 600; }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .row { display: flex; gap: 8px; margin-top: 4px; }
+  .btn { flex: 1; border: 0; border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 700; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); }
+  .btn.ghost { background: var(--surface-2); border: 1px solid var(--line); }
+  .btn.danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+  .info { border-radius: 12px; padding: 11px 13px; font-size: 13.5px; line-height: 1.45; margin: 0 0 12px; background: var(--warn-bg); color: var(--warn); }
+  .info.bad { background: var(--danger-bg); color: var(--danger); }
+  .info.ok { background: var(--accent-soft); color: var(--accent); }
+  .calc { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; background: var(--bg); border-radius: 12px; padding: 12px 14px; margin: 4px 0 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .calc span:nth-child(even) { text-align: right; font-weight: 600; }
+  .calc small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .calc .tot { font-weight: 800; font-size: 16px; }
+  .stack { display: grid; gap: 8px; }
+  .auth { position: fixed; inset: 0; z-index: 15; background: var(--bg); overflow-y: auto; }
+  .auth .box { max-width: 400px; margin: 0 auto; padding: calc(40px + env(safe-area-inset-top, 0px)) 20px 40px; }
+  .auth .logo { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 16px; }
+  .auth h2 { font-size: 26px; margin: 0 0 4px; display: block; }
+  .auth p { color: var(--muted); margin: 0 0 22px; line-height: 1.45; }
+  .auth label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
+  .auth input { width: 100%; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 12px; font-size: 16px; margin-bottom: 14px; }
+  .auth .btn { width: 100%; margin-top: 4px; }
+  .auth .alt { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
+  .auth .alt button { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 6px 0; }
+  .auth .pk-btn { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 6px; }
+  .auth .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 14px 0; }
+  .auth .or::before, .auth .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .auth .msg { border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; line-height: 1.4; background: var(--surface-2); }
+  .auth .msg.err { background: var(--danger-bg); color: var(--danger); }
+  .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -160%);
+    background: var(--accent); color: var(--accent-fg); padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 14px; z-index: 20;
+    transition: transform .2s; max-width: calc(100% - 32px); }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast.err { background: var(--danger); color: #fff; }
+  @media (min-width: 900px) {
+    .sheet { top: 50%; bottom: auto; left: 50%; right: auto; width: 560px; max-width: calc(100vw - 48px); margin: 0;
+      border-radius: 20px; max-height: 86vh; transform: translate(-50%, -46%); opacity: 0; transition: transform .18s ease, opacity .18s ease; }
+    .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sheet, .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Zakat</h1>
+      <div class="sub" id="status">Données sur cet appareil</div>
+    </div>
+    <div class="hbtns">
+      <button class="icon-btn" id="refreshBtn" aria-label="Actualiser les cours">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" aria-label="Réglages">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="comptes" aria-selected="true">Comptes</button>
+    <button class="tab" role="tab" data-tab="credits" aria-selected="false">Crédits</button>
+    <button class="tab" role="tab" data-tab="zakat" aria-selected="false">Zakat</button>
+  </nav>
+  <section id="p-comptes"></section>
+  <section id="p-credits" hidden></section>
+  <section id="p-zakat" hidden></section>
+</div>
+
+<button class="fab" id="fab">＋ Ajouter un compte</button>
+<div class="backdrop" id="backdrop" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+<div class="toast" id="toast" role="status"></div>
+<div class="auth" id="auth" hidden>
+  <div class="box">
+    <img class="logo" src="icon-192.png" alt="">
+    <h2 id="aTitle">Connexion</h2>
+    <p id="aSub">Connecte-toi pour retrouver tes comptes sur ton téléphone et sur ordinateur.</p>
+    <div class="msg" id="aMsg" hidden></div>
+    <button class="btn primary pk-btn" id="aPasskey" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1.5M15 9v1.5M12 9v4.5h-1"/><path d="M9.5 16a3.5 3.5 0 0 0 5 0"/></svg>
+      Se connecter avec Face ID
+    </button>
+    <div class="or" id="aOr" hidden><span>ou avec ton mot de passe</span></div>
+    <form id="aForm" novalidate>
+      <div id="aEmailRow"><label for="aEmail">Email</label>
+      <input id="aEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" required></div>
+      <div id="aPassRow"><label for="aPass">Mot de passe</label>
+      <input id="aPass" type="password" autocomplete="current-password" minlength="8" required></div>
+      <button class="btn primary" id="aSubmit" type="submit">Se connecter</button>
+    </form>
+    <div class="alt"><button id="aSwitch" type="button">Créer un compte</button><button id="aForgot" type="button">Mot de passe oublié ?</button></div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script>
+(() => {
+  "use strict";
+  const Z = window.ZakatEngine;
+  const CFG = window.ZAKAT_CONFIG || {};
+  const CLOUD = !!(CFG.supabaseUrl && CFG.supabaseKey);
+
+  // ================= BASE DE DONNÉES (IndexedDB, dans le téléphone) =================
+  const DB_NAME = "zakat-app", DB_VER = 1;
+  const DATA_STORES = ["accounts", "loans", "payments", "debts", "settings"];
+  let idb = null;
+  function openDb() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(DB_NAME, DB_VER);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        DATA_STORES.forEach(n => { if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, { keyPath: "id" }); });
+        if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta", { keyPath: "k" });
+        if (!d.objectStoreNames.contains("outbox")) d.createObjectStore("outbox", { keyPath: "key" }); // modifications à envoyer au serveur
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  const tx = (store, mode, fn) => new Promise((res, rej) => {
+    const t = idb.transaction(store, mode); const s = t.objectStore(store); const out = fn(s);
+    t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+  });
+  const getAll = store => tx(store, "readonly", s => s.getAll());
+  const queue = (store, id, data, deleted) => !CLOUD ? Promise.resolve() :
+    tx("outbox", "readwrite", s => s.put({ key: store + "/" + id, store, id: String(id), data: data || {}, deleted: !!deleted }))
+      .then(() => cloud.schedule(1200)).catch(() => {});
+  const put = async (store, v) => { await tx(store, "readwrite", s => s.put(v)); queue(store, v.id, v, false); };
+  const del = async (store, id) => { await tx(store, "readwrite", s => s.delete(id)); queue(store, id, null, true); };
+  async function setMeta(k, v) { S.meta[k] = v; await tx("meta", "readwrite", s => (v === undefined ? s.delete(k) : s.put({ k, v }))); }
+
+  // État en mémoire (copie de la base)
+  const DEFAULT_SETTINGS = { id: "main", ref: "EUR", nisabRef: "gold", surplusCents: 0, surplusCur: "EUR", hawlStart: null };
+  const S = { accounts: [], loans: [], payments: [], debts: [], settings: Object.assign({}, DEFAULT_SETTINGS), meta: {} };
+  async function loadAll() {
+    const [accounts, loans, payments, debts, settings, meta] = await Promise.all(["accounts", "loans", "payments", "debts", "settings", "meta"].map(getAll));
+    const byDate = (a, b) => (a.created || "") < (b.created || "") ? -1 : 1;
+    S.accounts = accounts.sort(byDate); S.loans = loans.sort(byDate);
+    S.payments = payments.sort((a, b) => (a.date < b.date ? 1 : -1)); S.debts = debts.sort(byDate);
+    S.settings = Object.assign({}, DEFAULT_SETTINGS, settings.find(x => x.id === "main") || {});
+    S.meta = Object.fromEntries(meta.map(m => [m.k, m.v]));
+  }
+  const saveSettings = patch => { S.settings = Object.assign({}, S.settings, patch); return put("settings", S.settings); };
+
+  // ================= OUTILS =================
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const pad = n => String(n).padStart(2, "0");
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const todayIso = () => iso(new Date());
+  const fromIso = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const dfr = s => s ? fromIso(s).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "";
+  const daysTo = s => Math.round((fromIso(s) - fromIso(todayIso())) / 86400000);
+  const parse = s => Number(String(s).replace(/[\s  €]/g, "").replace(",", "."));
+  const toCents = s => { const n = parse(s); return isFinite(n) ? Math.round(n * 100) : NaN; };
+  const CURRENCIES = ["EUR", "MAD", "USD"];
+  const SYM = { EUR: "€", MAD: "DH", USD: "$" };
+  const money = (cents, cur) => (cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (SYM[cur || S.settings.ref] || cur);
+  const inputVal = cents => cents ? (cents / 100).toFixed(2).replace(".", ",") : "";
+  const BANKS = { "LCL": ["EUR", "#1b3a8c"], "Boursorama": ["EUR", "#d6006e"], "Fortuneo": ["EUR", "#5f7f1f"], "Revolut": ["EUR", "#191c1f"],
+    "Wise": ["EUR", "#2f6b1f"], "PayPal": ["EUR", "#003087"], "CIH": ["MAD", "#c8001a"], "Espèces": ["EUR", "#5b6b64"], "Autre": ["EUR", "#1f6b52"] };
+  const TYPES = { cash: "Compte", gold: "Or", silver: "Argent", crypto: "Crypto" };
+  const CATEGORIES = ["Pauvres", "Nécessiteux", "Collecteurs de la zakat", "Ceux dont on rapproche les cœurs", "Affranchissement", "Endettés", "Dans le sentier d'Allah", "Voyageur en difficulté"];
+  const RELATIONS = [
+    ["none", "Aucun lien familial", null],
+    ["relative", "Proche non à ma charge (frère, sœur, oncle…)", ["ok", "Autorisé : la zakat à un proche dans le besoin, non à ta charge, unit aumône et lien familial."]],
+    ["husband", "Mon mari (je suis son épouse)", ["", "École malikite : déconseillé mais valable ; permis sans divergence si c'est pour payer ses dettes."]],
+    ["dependent", "Personne à ma charge (parent, enfant, épouse)", ["bad", "Interdit : on ne verse pas sa zakat aux personnes dont on a la charge."]]
+  ];
+  const LUNAR_YEAR_DAYS = 354;
+
+  function toast(msg, err) {
+    const t = $("toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+    clearTimeout(t._h); t._h = setTimeout(() => (t.className = "toast"), 2600);
+  }
+  function openSheet(html, focusId) {
+    const s = $("sheet");
+    s.innerHTML = `<div class="sheet-bar"><button class="sheet-x" type="button" aria-label="Fermer">✕</button></div>` + html;
+    s.querySelector(".sheet-x").onclick = closeSheet;
+    $("backdrop").hidden = false;
+    requestAnimationFrame(() => s.classList.add("open"));
+    if (focusId) setTimeout(() => { const el = $(focusId); if (el) el.focus(); }, 230);
+  }
+  function closeSheet() { $("sheet").classList.remove("open"); $("backdrop").hidden = true; }
+  $("backdrop").onclick = closeSheet;
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && $("sheet").classList.contains("open")) closeSheet(); });
+  const bindChips = (root, attr, onPick) => root.querySelectorAll(`[${attr}]`).forEach(b => (b.onclick = () => {
+    root.querySelectorAll(`[${attr}]`).forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); onPick(b.getAttribute(attr));
+  }));
+
+  // ================= COURS DE L'OR ET DES DEVISES =================
+  // Service gratuit sans clé : https://github.com/fawazahmed0/exchange-api (mis à jour chaque jour)
+  const TROY_OZ_G = 31.1034768;
+  let market = null, marketBusy = false;
+  async function fetchMarket(ref) {
+    const c = ref.toLowerCase();
+    const urls = [`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${c}.json`,
+      `https://latest.currency-api.pages.dev/v1/currencies/${c}.json`];
+    let last;
+    for (const u of urls) {
+      try {
+        const r = await fetch(u, { cache: "no-store" });
+        if (!r.ok) { last = new Error("HTTP " + r.status); continue; }
+        const j = await r.json(), x = j[c];
+        const rates = {};
+        CURRENCIES.forEach(k => { if (k !== ref) rates[k] = 1 / x[k.toLowerCase()]; });
+        return { ref, date: j.date, goldCents: Math.round(100 / x.xau / TROY_OZ_G), silverCents: Math.round(100 / x.xag / TROY_OZ_G), rates };
+      } catch (e) { last = e; }
+    }
+    throw last || new Error("Cours indisponibles");
+  }
+  async function loadMarket(force) {
+    const ref = S.settings.ref, cached = S.meta["market_" + ref];
+    if (cached) market = cached;
+    if (marketBusy || (!force && cached && cached.date === todayIso() && cached.fetched && Date.now() - cached.fetched < 6 * 3600e3)) { renderAll(); return; }
+    marketBusy = true; $("refreshBtn").classList.add("spin");
+    try {
+      const m = await fetchMarket(ref); m.fetched = Date.now();
+      market = m; await setMeta("market_" + ref, m);
+      if (force) toast("Cours mis à jour");
+    } catch (e) {
+      if (force || !market) toast(market ? "Cours non actualisés : derniers cours utilisés" : "Impossible de récupérer les cours (internet ?)", true);
+    } finally { marketBusy = false; $("refreshBtn").classList.remove("spin"); renderAll(); }
+  }
+  const rate = cur => market ? Z.rateFor(market, cur) : (cur === S.settings.ref ? 1 : null);
+  const toRef = (cents, cur) => { const r = rate(cur); return r == null ? null : Math.round(cents * r); };
+
+  // ================= CALCUL =================
+  const loanAssets = () => S.loans.filter(l => l.outstanding > 0)
+    .map(l => ({ id: l.id, name: "Prêt à " + l.name, type: "loan", cents: l.outstanding, currency: l.currency, secure: (l.risk || 0) === 0 }));
+  const hawlStart = () => S.settings.hawlStart || todayIso();
+  function compute() {
+    if (!market) return null;
+    const st = S.settings;
+    const r = Z.calculate([...S.accounts, ...loanAssets()], S.debts, market, {
+      madhhab: "maliki", nisabRef: st.nisabRef, surplusCents: toRef(st.surplusCents || 0, st.surplusCur) || 0 });
+    const since = hawlStart();
+    r.repayZakat = S.loans.reduce((s, l) => s + (l.repayments || []).filter(p => p.date >= since).reduce((t, p) => t + (toRef(p.zakat, l.currency) || 0), 0), 0);
+    r.totalDue = r.dueCents + r.repayZakat;
+    r.paid = S.payments.filter(p => p.date >= since).reduce((s, p) => s + (toRef(p.cents, p.currency) || 0), 0);
+    r.remaining = Math.max(0, r.totalDue - r.paid);
+    r.loansRef = S.loans.reduce((s, l) => s + (toRef(l.outstanding, l.currency) || 0), 0);
+    r.atRisk = S.loans.reduce((s, l) => s + Math.round((toRef(l.outstanding, l.currency) || 0) * (l.risk || 0) / 100), 0);
+    const accIds = new Set(S.accounts.map(a => a.id));
+    r.accountsTotal = r.lines.filter(l => accIds.has(l.id)).reduce((s, l) => s + l.refCents, 0)
+      + S.accounts.filter(a => r.excluded.some(e => e.id === a.id)).reduce((s, a) => s + Math.round(Z.pureGrams(a) * market.goldCents), 0);
+    return r;
+  }
+  const accountValue = (a, r) => {
+    const l = r && r.lines.find(x => x.id === a.id);
+    if (l) return l.refCents;
+    if (a.type === "gold" && market) return Math.round(Z.pureGrams(a) * market.goldCents);
+    return toRef(a.cents || 0, a.currency);
+  };
+
+  // ================= AFFICHAGE =================
+  let tab = "comptes";
+  const FAB = { comptes: "＋ Ajouter un compte", credits: "＋ Nouveau prêt", zakat: "＋ Nouveau versement" };
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t ? "true" : "false"));
+    ["comptes", "credits", "zakat"].forEach(n => ($("p-" + n).hidden = n !== t));
+    $("fab").textContent = FAB[t];
+    try { localStorage.setItem("zakat.tab", t); } catch (_) {}
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll(".tab").forEach(b => (b.onclick = () => setTab(b.dataset.tab)));
+  $("fab").onclick = () => (tab === "comptes" ? accountSheet() : tab === "credits" ? loanSheet() : paymentSheet());
+  $("refreshBtn").onclick = () => loadMarket(true);
+  $("settingsBtn").onclick = () => settingsSheet();
+
+  function ratesLine() {
+    if (!market) return `<div class="rates">Récupération des cours du jour…</div>`;
+    const ref = S.settings.ref, other = ref === "MAD" ? "EUR" : "MAD";
+    const r = 1 / Z.rateFor(market, other);
+    return `<div class="rates">Cours du ${dfr(market.date)} · or ${money(market.goldCents)}/g · 1 ${ref} = ${r.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} ${other}</div>`;
+  }
+
+  function renderAccounts(r) {
+    const ref = S.settings.ref, other = ref === "MAD" ? "EUR" : "MAD";
+    const total = r ? r.accountsTotal : null;
+    const otherVal = r && market ? Math.round(total / Z.rateFor(market, other)) : null;
+    const items = S.accounts.map(a => {
+      const bank = BANKS[a.bank] ? a.bank : null;
+      const av = bank ? `<span class="av" style="background:${BANKS[bank][1]}">${esc(bank.slice(0, 2).toUpperCase())}</span>`
+        : `<span class="av soft">${esc(TYPES[a.type].slice(0, 2))}</span>`;
+      const ex = r && r.excluded.find(e => e.id === a.id);
+      let sub = a.type === "gold" ? `${String(a.grams).replace(".", ",")} g · ${a.carats} carats${a.usage === "worn" ? " · porté" : ""}`
+        : a.type === "silver" ? `${String(a.grams).replace(".", ",")} g` : a.currency !== ref ? money(a.cents, a.currency) : TYPES[a.type];
+      if (ex) sub += " · non soumis à la zakat";
+      const val = accountValue(a, r);
+      return `<button class="item" data-acc="${esc(a.id)}">${av}<span class="mid"><div>${esc(a.name)}</div><small>${esc(sub)}</small></span>
+        <span class="amt">${val == null ? "…" : money(val)}</span></button>`;
+    }).join("") || `<div class="item empty">Ajoute ton premier compte avec le bouton en bas.</div>`;
+    $("p-comptes").innerHTML = `
+      <div class="hero">
+        <div class="top"><span class="lbl">Total de mes comptes</span></div>
+        <div class="big">${total == null ? "…" : money(total)}</div>
+        <div class="line"><span>Soit environ</span><b>${otherVal == null ? "…" : money(otherVal, other)}</b></div>
+        <div class="line"><span>Argent qu'on me doit</span><b>${r ? money(r.loansRef) : "…"}</b></div>
+      </div>
+      ${ratesLine()}
+      <h2>Mes comptes</h2>
+      <div class="list">${items}</div>
+      <p class="note">Touche un compte pour mettre à jour son solde.</p>`;
+    $("p-comptes").querySelectorAll("[data-acc]").forEach(b => (b.onclick = () => accountSheet(S.accounts.find(a => a.id === b.dataset.acc))));
+  }
+
+  const loanState = l => {
+    if (l.outstanding <= 0) return ["ok", "Remboursé"];
+    if (l.due) { const d = daysTo(l.due); if (d < 0) return ["late", "En retard"]; if (d <= 7) return ["soon", "Bientôt"]; }
+    return null;
+  };
+  function renderLoans(r) {
+    const active = S.loans.filter(l => l.outstanding > 0);
+    const alerts = active.filter(l => { const s = loanState(l); return s && (s[0] === "late" || s[0] === "soon"); });
+    const cards = S.loans.map(l => {
+      const st = loanState(l), repaid = l.initial - l.outstanding;
+      const hist = (l.repayments || []).map(p => `${dfr(p.date)} : ${money(p.cents, l.currency)} remboursés · zakat ${money(p.zakat, l.currency)}`).join("<br>");
+      return `<div class="card loan">
+        <div class="head"><span class="name">${esc(l.name)}</span>${st ? `<span class="pill ${st[0]}">${st[1]}</span>` : ""}</div>
+        <div class="meta">Prêté le ${dfr(l.date)} · ${money(l.initial, l.currency)}</div>
+        <div class="meta${(l.risk || 0) >= 50 ? " risk" : ""}">Remboursement prévu : ${l.due ? dfr(l.due) : "date inconnue"} · risque ${l.risk || 0} %</div>
+        <div class="bar"><i style="width:${l.initial ? Math.round(repaid / l.initial * 100) : 0}%"></i></div>
+        <div class="foot"><b>Reste : ${money(l.outstanding, l.currency)}</b>
+          <span>${l.outstanding > 0 ? `<button class="linkish" data-repay="${esc(l.id)}">Remboursement</button> · ` : ""}<button class="linkish" data-edit-loan="${esc(l.id)}">Modifier</button></span></div>
+        ${hist ? `<div class="hist">${hist}</div>` : ""}
+      </div>`;
+    }).join("") || `<div class="list"><div class="item empty">Aucun prêt enregistré.</div></div>`;
+    $("p-credits").innerHTML = `
+      <div class="hero">
+        <div class="top"><span class="lbl">Argent qu'on me doit</span></div>
+        <div class="big">${r ? money(r.loansRef) : "…"}</div>
+        <div class="line"><span>Crédits en cours</span><b>${active.length}</b></div>
+        <div class="line"><span>Montant à risque</span><b>${r ? money(r.atRisk) : "…"}</b></div>
+      </div>
+      ${alerts.map(l => { const late = daysTo(l.due) < 0; return `<div class="alert${late ? " late" : ""}">🔔<span>${esc(l.name)} ${late ? "devait rembourser" : "doit rembourser"} le ${dfr(l.due)} (${money(l.outstanding, l.currency)}).</span></div>`; }).join("")}
+      <h2>Mes crédits accordés</h2>
+      ${cards}
+      <p class="note">École malikite : l'argent prêté ne compte pas chaque année dans la zakat. À chaque remboursement, l'appli ajoute la zakat d'une seule année (2,5 %).</p>`;
+    $("p-credits").querySelectorAll("[data-repay]").forEach(b => (b.onclick = () => repaySheet(S.loans.find(l => l.id === b.dataset.repay))));
+    $("p-credits").querySelectorAll("[data-edit-loan]").forEach(b => (b.onclick = () => loanSheet(S.loans.find(l => l.id === b.dataset.editLoan))));
+  }
+
+  function renderZakat(r) {
+    const start = hawlStart(), end = iso(new Date(fromIso(start).getTime() + LUNAR_YEAR_DAYS * 86400000)), left = daysTo(end);
+    const pays = S.payments.filter(p => p.date >= start).map(p => `<button class="item" data-pay="${esc(p.id)}">
+        <span class="mid"><div>${esc(p.beneficiary || "Versement")}</div><small>${esc(p.category)} · ${dfr(p.date)}</small></span>
+        <span class="amt">${money(p.cents, p.currency)}</span></button>`).join("") || `<div class="item empty">Aucun versement cette année.</div>`;
+    const debts = S.debts.map(d => `<button class="item" data-debt="${esc(d.id)}"><span class="mid"><div>${esc(d.name)}</div></span><span class="amt">${money(d.cents, d.currency)}</span></button>`).join("");
+    const st = S.settings;
+    $("p-zakat").innerHTML = `
+      <div class="hero">
+        <div class="top"><span class="lbl">Zakat à verser</span>${r ? `<span class="badge${r.reached ? "" : " off"}">${r.reached ? "Nisab atteint" : "Sous le nisab"}</span>` : ""}</div>
+        <div class="big">${r ? money(r.totalDue) : "…"}</div>
+        <div class="line"><span>Patrimoine soumis</span><b>${r ? money(r.baseCents) : "…"}</b></div>
+        <div class="line"><span>Nisab du jour (${st.nisabRef === "silver" ? "595 g d'argent" : "85 g d'or"})</span><b>${r ? money(r.nisabCents) : "…"}</b></div>
+        ${r && r.repayZakat ? `<div class="line"><span>Dont remboursements reçus</span><b>${money(r.repayZakat)}</b></div>` : ""}
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="l">Versé cette année</div><div class="v">${r ? money(r.paid) : "…"}</div></div>
+        <div class="kpi"><div class="l">Reste à verser</div><div class="v">${r ? money(r.remaining) : "…"}</div></div>
+      </div>
+      <p class="note">Année de zakat commencée le ${dfr(start)} · échéance le ${dfr(end)} (${left >= 0 ? "dans " + left + " jours" : "dépassée"}). <button class="linkish" id="hawlBtn">Modifier</button></p>
+      <div class="list" style="margin-top:12px"><button class="item" id="detailBtn"><span class="mid"><div>Détail du calcul</div><small>Chaque compte, les taux appliqués, l'assiette</small></span><span class="amt">›</span></button></div>
+      <h2>Versements <button id="addPay">＋ Ajouter</button></h2>
+      <div class="list">${pays}</div>
+      <h2>Mes dettes <button id="addDebt">＋ Ajouter</button></h2>
+      <div class="list">${debts || `<div class="item empty">Aucune dette enregistrée.</div>`}
+        <button class="item" id="surplusBtn"><span class="mid"><div>Biens non soumis en surplus</div><small>La dette se règle d'abord sur eux (malikite)</small></span><span class="amt">${money(st.surplusCents || 0, st.surplusCur)}</span></button></div>
+      ${r && S.debts.length ? `<p class="note">Dette déduite de l'assiette : ${money(r.deductibleCents)}.</p>` : ""}`;
+    const P = $("p-zakat");
+    P.querySelectorAll("[data-pay]").forEach(b => (b.onclick = () => paymentSheet(S.payments.find(p => p.id === b.dataset.pay))));
+    P.querySelectorAll("[data-debt]").forEach(b => (b.onclick = () => debtSheet(S.debts.find(d => d.id === b.dataset.debt))));
+    $("addPay").onclick = () => paymentSheet(); $("addDebt").onclick = () => debtSheet();
+    $("surplusBtn").onclick = surplusSheet; $("detailBtn").onclick = () => detailSheet(r); $("hawlBtn").onclick = hawlSheet;
+  }
+
+  function renderAll() {
+    const r = compute();
+    renderAccounts(r); renderLoans(r); renderZakat(r); updateStatus();
+  }
+
+  // ================= FORMULAIRES =================
+  function accountSheet(a) {
+    const isNew = !a;
+    const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", bank: "LCL", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
+    const draw = () => {
+      const metal = d.type === "gold" || d.type === "silver";
+      openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
+        <div class="cur">${isNew ? "Banque, espèces, or, argent ou crypto." : "Mets à jour le solde quand il change."}</div>
+        ${isNew ? `<div class="chips">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${d.type === k}">${t}</button>`).join("")}</div>` : ""}
+        ${d.type === "cash" ? `<label class="f" for="fBank">Banque</label><select id="fBank">${Object.keys(BANKS).map(b => `<option${b === d.bank ? " selected" : ""}>${b}</option>`).join("")}</select>` : ""}
+        <label class="f" for="fName">Nom${d.type === "cash" ? " (facultatif, ex. LCL Épargne)" : ""}</label>
+        <input id="fName" class="small" value="${esc(d.name)}" autocomplete="off">
+        ${metal ? `<label class="f" for="fGrams">Poids (g)</label><input id="fGrams" inputmode="decimal" value="${d.grams ? String(d.grams).replace(".", ",") : ""}">
+          ${d.type === "gold" ? `<label class="f" for="fCarats">Carats</label><select id="fCarats">${[24, 22, 21, 18].map(c => `<option value="${c}"${c === d.carats ? " selected" : ""}>${c} carats</option>`).join("")}</select>
+          <label class="f">Usage</label><div class="chips"><button class="chip" data-usage="savings" aria-pressed="${d.usage !== "worn"}">Épargne</button><button class="chip" data-usage="worn" aria-pressed="${d.usage === "worn"}">Porté</button></div>
+          <div class="info" id="usageInfo">${d.usage === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."}</div>` : ""}`
+        : `<label class="f" for="fAmt">Solde</label><div class="two"><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
+          <select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>`}
+        <div class="row"><button class="btn primary" id="fSave">Enregistrer</button></div>
+        ${isNew ? "" : `<div class="row"><button class="btn danger" id="fDel">Supprimer ce compte</button></div>`}`, isNew ? null : (metal ? "fGrams" : "fAmt"));
+      const sh = $("sheet");
+      const keep = () => { d.name = $("fName").value; if ($("fAmt")) d.cents = toCents($("fAmt").value) || 0; if ($("fGrams")) d.grams = parse($("fGrams").value) || 0; };
+      bindChips(sh, "data-type", t => { keep(); d.type = t; if (t === "crypto") d.currency = S.settings.ref; draw(); });
+      bindChips(sh, "data-usage", u => { d.usage = u; $("usageInfo").textContent = u === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."; });
+      if ($("fBank")) $("fBank").onchange = () => { d.bank = $("fBank").value; $("fCur").value = BANKS[d.bank][0]; };
+      $("fSave").onclick = async () => {
+        keep();
+        if (d.type === "cash") { d.bank = $("fBank").value; d.currency = $("fCur").value; }
+        if (d.type === "crypto") d.currency = $("fCur").value;
+        if (d.type === "gold") d.carats = Number($("fCarats").value);
+        if (d.type === "gold" || d.type === "silver") { if (!(d.grams > 0)) return toast("Indique le poids en grammes", true); d.cents = 0; }
+        else if (isNaN(d.cents)) return toast("Montant invalide", true);
+        d.name = d.name.trim() || (d.type === "cash" && d.bank !== "Autre" ? d.bank : TYPES[d.type]);
+        if (d.type !== "cash") delete d.bank;
+        await put("accounts", d); await loadAll(); closeSheet(); renderAll(); toast(isNew ? "Compte ajouté" : "Compte mis à jour");
+      };
+      if ($("fDel")) $("fDel").onclick = async () => { if (!confirm("Supprimer « " + d.name + " » ?")) return; await del("accounts", d.id); await loadAll(); closeSheet(); renderAll(); toast("Compte supprimé"); };
+    };
+    draw();
+  }
+
+  function loanSheet(l) {
+    const isNew = !l;
+    const d = l ? Object.assign({}, l) : { id: uid(), name: "", initial: 0, outstanding: 0, currency: S.settings.ref, date: todayIso(), due: "", risk: 0, repayments: [], created: new Date().toISOString() };
+    openSheet(`<h3>${isNew ? "Argent prêté à quelqu'un" : "Modifier le prêt"}</h3>
+      <div class="cur">Le risque sert à voir le montant que tu pourrais ne pas récupérer.</div>
+      <label class="f" for="lName">Nom</label><input id="lName" class="small" value="${esc(d.name)}" autocomplete="off">
+      <label class="f" for="lAmt">Montant prêté</label><div class="two"><input id="lAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.initial)}">
+        <select id="lCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+      <label class="f" for="lDate">Date du prêt</label><input id="lDate" type="date" class="small" value="${d.date}">
+      <label class="f" for="lDue">Remboursement prévu (facultatif)</label><input id="lDue" type="date" class="small" value="${d.due || ""}">
+      <label class="f" for="lRisk">Risque de non-remboursement : <span id="lRiskV">${d.risk || 0}</span> %</label>
+      <input id="lRisk" type="range" min="0" max="100" step="10" value="${d.risk || 0}">
+      <div class="row"><button class="btn primary" id="lSave">Enregistrer</button></div>
+      ${isNew ? "" : `<div class="row"><button class="btn danger" id="lDel">Supprimer ce prêt</button></div>`}`, isNew ? "lName" : null);
+    $("lRisk").oninput = () => ($("lRiskV").textContent = $("lRisk").value);
+    $("lSave").onclick = async () => {
+      const amt = toCents($("lAmt").value);
+      if (!(amt > 0)) return toast("Indique le montant prêté", true);
+      const repaid = d.initial - d.outstanding;
+      d.name = $("lName").value.trim() || "Prêt"; d.currency = $("lCur").value; d.date = $("lDate").value || todayIso();
+      d.due = $("lDue").value || ""; d.risk = Number($("lRisk").value); d.initial = amt; d.outstanding = Math.max(0, amt - repaid);
+      await put("loans", d); await loadAll(); closeSheet(); renderAll(); toast(isNew ? "Prêt ajouté" : "Prêt mis à jour");
+    };
+    if ($("lDel")) $("lDel").onclick = async () => { if (!confirm("Supprimer le prêt à " + d.name + " ?")) return; await del("loans", d.id); await loadAll(); closeSheet(); renderAll(); toast("Prêt supprimé"); };
+  }
+
+  function repaySheet(l) {
+    const targets = S.accounts.filter(a => a.type === "cash" || a.type === "crypto");
+    openSheet(`<h3>Remboursement de ${esc(l.name)}</h3>
+      <div class="cur">Reste dû : ${money(l.outstanding, l.currency)}</div>
+      <label class="f" for="rAmt">Montant remboursé (${l.currency})</label><input id="rAmt" inputmode="decimal" value="${inputVal(l.outstanding)}">
+      <label class="f" for="rDate">Date</label><input id="rDate" type="date" class="small" value="${todayIso()}">
+      <label class="f" for="rAcc">Créditer le compte</label><select id="rAcc"><option value="">Aucun</option>${targets.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${a.currency})</option>`).join("")}</select>
+      <div class="row"><button class="btn primary" id="rSave">Valider le remboursement</button></div>`, "rAmt");
+    $("rSave").onclick = async () => {
+      let cents = toCents($("rAmt").value);
+      if (!(cents > 0)) return toast("Montant invalide", true);
+      cents = Math.min(cents, l.outstanding);
+      const acc = targets.find(a => a.id === $("rAcc").value);
+      if (acc && acc.currency !== l.currency && !market) return toast("Cours indisponibles : choisis « Aucun » ou un compte en " + l.currency, true);
+      const zakat = Z.zakatOnRepayment(cents);
+      const loan = Object.assign({}, l, { outstanding: l.outstanding - cents, repayments: [...(l.repayments || []), { date: $("rDate").value || todayIso(), cents, zakat, account: acc ? acc.id : null }] });
+      await put("loans", loan);
+      if (acc) {
+        const add = acc.currency === l.currency ? cents : Math.round(cents * Z.rateFor(market, l.currency) / Z.rateFor(market, acc.currency));
+        await put("accounts", Object.assign({}, acc, { cents: (acc.cents || 0) + add }));
+      }
+      await loadAll(); renderAll();
+      openSheet(`<h3>Zakat sur ce remboursement</h3>
+        <div class="info ok">Selon l'école malikite, un prêt remboursé donne lieu à la zakat d'une seule année : 2,5 % de ${money(cents, l.currency)}, soit <b>${money(zakat, l.currency)}</b>.</div>
+        <div class="cur">Ce montant est ajouté à ta zakat à verser, dans l'onglet Zakat.${acc ? ` ${esc(acc.name)} a été crédité.` : ""}</div>
+        <div class="row"><button class="btn primary" id="okBtn">Compris</button></div>`);
+      $("okBtn").onclick = closeSheet;
+    };
+  }
+
+  function paymentSheet(p) {
+    const isNew = !p;
+    const d = p ? Object.assign({}, p) : { id: uid(), date: todayIso(), cents: 0, currency: S.settings.ref, category: CATEGORIES[0], beneficiary: "", relation: "none" };
+    openSheet(`<h3>${isNew ? "Nouveau versement de zakat" : "Modifier le versement"}</h3>
+      <label class="f" for="pAmt">Montant</label><div class="two"><input id="pAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
+        <select id="pCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+      <label class="f" for="pBen">Bénéficiaire ou association (facultatif)</label><input id="pBen" class="small" value="${esc(d.beneficiary)}" autocomplete="off">
+      <label class="f" for="pCat">Catégorie de bénéficiaire</label><select id="pCat">${CATEGORIES.map(c => `<option${c === d.category ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <label class="f" for="pRel">Lien avec le bénéficiaire</label><select id="pRel">${RELATIONS.map(([k, t]) => `<option value="${k}"${k === d.relation ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      <div id="pNote"></div>
+      <label class="f" for="pDate">Date</label><input id="pDate" type="date" class="small" value="${d.date}">
+      <div class="row"><button class="btn primary" id="pSave">Enregistrer le versement</button></div>
+      ${isNew ? "" : `<div class="row"><button class="btn danger" id="pDel">Supprimer</button></div>`}`, isNew ? "pAmt" : null);
+    const note = () => { const n = RELATIONS.find(x => x[0] === $("pRel").value)[2]; $("pNote").innerHTML = n ? `<div class="info ${n[0]}">${esc(n[1])}</div>` : ""; };
+    $("pRel").onchange = note; note();
+    $("pSave").onclick = async () => {
+      if ($("pRel").value === "dependent") return toast("Ce versement ne peut pas compter comme zakat", true);
+      const cents = toCents($("pAmt").value);
+      if (!(cents > 0)) return toast("Montant invalide", true);
+      Object.assign(d, { cents, currency: $("pCur").value, beneficiary: $("pBen").value.trim(), category: $("pCat").value, relation: $("pRel").value, date: $("pDate").value || todayIso() });
+      await put("payments", d); await loadAll(); closeSheet(); renderAll(); toast("Versement enregistré");
+    };
+    if ($("pDel")) $("pDel").onclick = async () => { if (!confirm("Supprimer ce versement ?")) return; await del("payments", d.id); await loadAll(); closeSheet(); renderAll(); toast("Versement supprimé"); };
+  }
+
+  function debtSheet(x) {
+    const isNew = !x;
+    const d = x ? Object.assign({}, x) : { id: uid(), name: "", cents: 0, currency: S.settings.ref, created: new Date().toISOString() };
+    openSheet(`<h3>${isNew ? "Ajouter une dette" : "Modifier la dette"}</h3>
+      <div class="cur">Argent que tu dois (crédit, achat à crédit, dette envers un proche). Selon l'école malikite, la dette entière réduit l'argent soumis à la zakat.</div>
+      <label class="f" for="dName">Nom</label><input id="dName" class="small" value="${esc(d.name)}" autocomplete="off">
+      <label class="f" for="dAmt">Montant restant dû</label><div class="two"><input id="dAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
+        <select id="dCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="row"><button class="btn primary" id="dSave">Enregistrer</button></div>
+      ${isNew ? "" : `<div class="row"><button class="btn danger" id="dDel">Supprimer</button></div>`}`, isNew ? "dName" : "dAmt");
+    $("dSave").onclick = async () => {
+      const cents = toCents($("dAmt").value);
+      if (!(cents >= 0)) return toast("Montant invalide", true);
+      Object.assign(d, { name: $("dName").value.trim() || "Dette", cents, currency: $("dCur").value });
+      await put("debts", d); await loadAll(); closeSheet(); renderAll(); toast("Dette enregistrée");
+    };
+    if ($("dDel")) $("dDel").onclick = async () => { await del("debts", d.id); await loadAll(); closeSheet(); renderAll(); toast("Dette supprimée"); };
+  }
+
+  function surplusSheet() {
+    const st = S.settings;
+    openSheet(`<h3>Biens non soumis en surplus</h3>
+      <div class="cur">Second véhicule, terrain gardé sans intention de vendre, objets de valeur dont tu n'as pas besoin. Selon l'école malikite, une dette se règle d'abord sur ces biens : seul le reste est déduit de ta zakat.</div>
+      <label class="f" for="sAmt">Valeur totale</label><div class="two"><input id="sAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(st.surplusCents)}">
+        <select id="sCur">${CURRENCIES.map(c => `<option${c === st.surplusCur ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="row"><button class="btn primary" id="sSave">Enregistrer</button></div>`, "sAmt");
+    $("sSave").onclick = async () => {
+      const cents = toCents($("sAmt").value || "0");
+      if (!(cents >= 0)) return toast("Montant invalide", true);
+      await saveSettings({ surplusCents: cents, surplusCur: $("sCur").value }); closeSheet(); renderAll();
+    };
+  }
+
+  function hawlSheet() {
+    openSheet(`<h3>Année de zakat</h3>
+      <div class="cur">La zakat est due quand ton patrimoine est resté au-dessus du nisab pendant une année lunaire (environ 354 jours). Indique le jour où commence ton année de zakat : les versements et remboursements comptent à partir de cette date.</div>
+      <label class="f" for="hDate">Début de l'année de zakat</label><input id="hDate" type="date" class="small" value="${hawlStart()}">
+      <div class="row"><button class="btn primary" id="hSave">Enregistrer</button></div>
+      <div class="row"><button class="btn ghost" id="hNew">Commencer une nouvelle année aujourd'hui</button></div>`);
+    $("hSave").onclick = async () => { await saveSettings({ hawlStart: $("hDate").value || todayIso() }); closeSheet(); renderAll(); toast("Année de zakat mise à jour"); };
+    $("hNew").onclick = async () => { await saveSettings({ hawlStart: todayIso() }); closeSheet(); renderAll(); toast("Nouvelle année de zakat commencée"); };
+  }
+
+  function detailSheet(r) {
+    if (!r) return toast("Cours pas encore disponibles", true);
+    const rows = r.lines.map(l => {
+      const a = S.accounts.find(x => x.id === l.id) || loanAssets().find(x => x.id === l.id) || {};
+      let sub = "";
+      if (l.grams) sub = `${l.grams.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} g pur × ${money(Math.round(l.rate * 100))}/g`;
+      else if (l.origCurrency !== market.ref) sub = `${money(l.origCents, l.origCurrency)} × ${l.rate.toLocaleString("fr-FR", { maximumFractionDigits: 4 })}`;
+      return `<span>${esc(a.name || l.label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span>${money(l.refCents)}</span>`;
+    }).join("");
+    const ex = r.excluded.map(e => { const a = S.accounts.find(x => x.id === e.id) || loanAssets().find(x => x.id === e.id) || {}; return `<li>${esc(a.name || "")} : ${esc(e.reason)}</li>`; }).join("");
+    openSheet(`<h3>Détail du calcul</h3>
+      <div class="cur">Cours du ${dfr(market.date)}. École malikite, nisab ${S.settings.nisabRef === "silver" ? "argent (595 g)" : "or (85 g)"}.</div>
+      <div class="calc">${rows || "<span>Aucun avoir soumis</span><span></span>"}
+        <span>Dettes déductibles</span><span>− ${money(r.deductibleCents)}</span>
+        <span class="tot">Assiette</span><span class="tot">${money(r.baseCents)}</span>
+        <span>Nisab du jour</span><span>${money(r.nisabCents)}</span>
+        <span>Statut</span><span>${r.reached ? "Atteint" : "Non atteint"}</span>
+        <span>Zakat sur le patrimoine (2,5 %)</span><span>${money(r.dueCents)}</span>
+        <span>Zakat sur remboursements reçus</span><span>${money(r.repayZakat)}</span>
+        <span class="tot">Total à verser</span><span class="tot">${money(r.totalDue)}</span></div>
+      ${ex ? `<div class="cur"><b>Non comptés :</b><ul style="margin:6px 0 0;padding-left:18px">${ex}</ul></div>` : ""}
+      <div class="cur">Ce calcul suit les règles de l'école malikite telles que nous les avons comprises ; en cas de doute, demande l'avis d'un savant.</div>`);
+  }
+
+  function settingsSheet() {
+    const st = S.settings, s = CLOUD && cloud.session;
+    openSheet(`<h3>Réglages</h3>
+      ${s ? `<div class="cur">Connecté : ${esc(s.user.email || "")}</div>` : `<div class="cur">${CLOUD ? "Non connecté" : "Mode local : les données restent sur cet appareil."}</div>`}
+      <label class="f" for="stRef">Devise de référence</label><select id="stRef">${CURRENCIES.map(c => `<option${c === st.ref ? " selected" : ""}>${c}</option>`).join("")}</select>
+      <label class="f" for="stNisab">Nisab de référence</label><select id="stNisab"><option value="gold"${st.nisabRef !== "silver" ? " selected" : ""}>Or : 85 g</option><option value="silver"${st.nisabRef === "silver" ? " selected" : ""}>Argent : 595 g</option></select>
+      <div class="stack">
+        ${s && passkey.supported() ? `<button class="btn ghost" id="pkAdd">${passkey.known() ? "Face ID activé ✓ · ajouter cet appareil" : "Activer la connexion Face ID"}</button>` : ""}
+        ${s ? `<button class="btn ghost" id="syncNow">Synchroniser maintenant</button>` : ""}
+        <button class="btn ghost" id="exportBtn">Exporter une sauvegarde</button>
+        ${s ? `<button class="btn danger" id="logout">Se déconnecter</button>` : ""}
+      </div>
+      <p class="note">Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
+    $("stRef").onchange = async () => { await saveSettings({ ref: $("stRef").value }); market = S.meta["market_" + S.settings.ref] || null; renderAll(); loadMarket(); };
+    $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
+    if ($("pkAdd")) $("pkAdd").onclick = () => passkey.register();
+    if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);
+    if ($("logout")) $("logout").onclick = async () => { if (!confirm("Se déconnecter ? Les données de cet appareil seront effacées (elles restent sur ton compte).")) return; closeSheet(); await cloud.signOut(); };
+    $("exportBtn").onclick = () => {
+      const data = { app: "zakat", version: 1, exportedAt: new Date().toISOString(), accounts: S.accounts, loans: S.loans, payments: S.payments, debts: S.debts, settings: S.settings };
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+      a.download = `zakat-sauvegarde-${todayIso()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+  }
+
+  // ================= COMPTE ET SYNCHRO EN LIGNE (Supabase) =================
+  // Les données restent dans l'appareil (l'appli marche hors ligne) et sont copiées sur le serveur.
+  // Chaque modification passe par une file d'envoi (outbox) ; les modifications faites sur un autre
+  // appareil sont récupérées à l'ouverture, au retour du réseau et toutes les 30 s.
+  const SB_URL = CFG.supabaseUrl, SB_KEY = CFG.supabaseKey, TABLE = "zakat_entries";
+  const SITE = location.origin + location.pathname.replace(/[^/]*$/, "");
+  const LS_KEY = "zakat.session";
+  const ls = {
+    get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } },
+    set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+  };
+  class AuthError extends Error {}
+  const jwtPayload = t => { try { return JSON.parse(decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))); } catch (_) { return {}; } };
+  const ERR_FR = [
+    [/invalid login credentials/i, "Email ou mot de passe incorrect."],
+    [/email not confirmed/i, "Ton email n'est pas encore confirmé : clique sur le lien reçu par email, puis reconnecte-toi."],
+    [/already registered|already exists/i, "Un compte existe déjà avec cet email : connecte-toi."],
+    [/password should be at least|weak password/i, "Mot de passe trop court : 8 caractères minimum."],
+    [/rate limit|too many/i, "Trop de tentatives : réessaie dans quelques minutes."],
+    [/unable to validate email|invalid email/i, "Adresse email invalide."],
+    [/failed to fetch|network|load failed/i, "Pas de connexion internet."]
+  ];
+  const frErr = m => { for (const [re, fr] of ERR_FR) if (re.test(m || "")) return fr; return m || "Erreur inconnue"; };
+  const hhmm = t => new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+  // ---------- Connexion Face ID / Touch ID (passkeys Supabase) ----------
+  const b64uToBuf = s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; };
+  const bufToB64u = buf => { const u = new Uint8Array(buf); let b = ""; for (let i = 0; i < u.length; i++) b += String.fromCharCode(u[i]); return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const passkey = {
+    supported: () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext),
+    known() { try { return localStorage.getItem("zakat.passkey") === "1"; } catch (_) { return false; } },
+    remember() { try { localStorage.setItem("zakat.passkey", "1"); } catch (_) {} },
+    creationOpts(o) {
+      if (PublicKeyCredential.parseCreationOptionsFromJSON) return PublicKeyCredential.parseCreationOptionsFromJSON(o);
+      return Object.assign({}, o, { challenge: b64uToBuf(o.challenge), user: Object.assign({}, o.user, { id: b64uToBuf(o.user.id) }),
+        excludeCredentials: (o.excludeCredentials || []).map(c => Object.assign({}, c, { id: b64uToBuf(c.id) })) });
+    },
+    requestOpts(o) {
+      if (PublicKeyCredential.parseRequestOptionsFromJSON) return PublicKeyCredential.parseRequestOptionsFromJSON(o);
+      const r = Object.assign({}, o, { challenge: b64uToBuf(o.challenge) });
+      if (o.allowCredentials && o.allowCredentials.length) r.allowCredentials = o.allowCredentials.map(c => Object.assign({}, c, { id: b64uToBuf(c.id) }));
+      else delete r.allowCredentials;
+      return r;
+    },
+    toJSON(c) {
+      if (typeof c.toJSON === "function") return c.toJSON();
+      const r = c.response, out = { id: c.id, rawId: c.id, type: "public-key", clientExtensionResults: c.getClientExtensionResults(),
+        authenticatorAttachment: c.authenticatorAttachment || undefined, response: { clientDataJSON: bufToB64u(r.clientDataJSON) } };
+      if (r.attestationObject) out.response.attestationObject = bufToB64u(r.attestationObject);
+      if (r.authenticatorData) { out.response.authenticatorData = bufToB64u(r.authenticatorData); out.response.signature = bufToB64u(r.signature); if (r.userHandle) out.response.userHandle = bufToB64u(r.userHandle); }
+      return out;
+    },
+    err(e) {
+      const n = e && e.name;
+      if (n === "NotAllowedError" || n === "AbortError") return "Face ID annulé.";
+      if (n === "InvalidStateError") return "Face ID est déjà activé sur cet appareil.";
+      const m = (e && e.message) || "";
+      if (/passkey.*(disabled|not enabled)|not.*enabled/i.test(m)) return "La connexion Face ID n'est pas encore activée sur le serveur.";
+      return frErr(m);
+    },
+    async register() {
+      if (!navigator.onLine) { toast("Connecte-toi à internet pour activer Face ID", true); return; }
+      try {
+        const o = await cloud.api("/auth/v1/passkeys/registration/options", { method: "POST", body: "{}" });
+        const cred = await navigator.credentials.create({ publicKey: passkey.creationOpts(o.options) });
+        await cloud.api("/auth/v1/passkeys/registration/verify", { method: "POST", body: JSON.stringify({ challenge_id: o.challenge_id, credential: passkey.toJSON(cred) }) });
+        passkey.remember(); closeSheet(); toast("Face ID activé : la prochaine fois, connecte-toi sans mot de passe");
+      } catch (e) { toast(passkey.err(e), true); }
+    },
+    async login() {
+      const b = $("aPasskey"); b.disabled = true;
+      try {
+        const o = await cloud.api("/auth/v1/passkeys/authentication/options", { method: "POST", body: "{}" }, false);
+        const cred = await navigator.credentials.get({ publicKey: passkey.requestOpts(o.options) });
+        const j = await cloud.api("/auth/v1/passkeys/authentication/verify", { method: "POST", body: JSON.stringify({ challenge_id: o.challenge_id, credential: passkey.toJSON(cred) }) }, false);
+        const sess = j && j.access_token ? j : j && j.session;
+        if (!sess || !sess.access_token) throw new Error("Réponse inattendue du serveur");
+        cloud.saveSession(sess); passkey.remember();
+        await cloud.enter(); renderAll(); toast("Connecté avec Face ID");
+      } catch (e) { cloud.showAuth("login", passkey.err(e), true); }
+      finally { b.disabled = false; }
+    }
+  };
+
+  const cloud = {
+    session: null, busy: false, again: false, err: null, last: null, timer: null, poll: null, pending: 0, mode: "login", recovery: false,
+    async api(path, opts = {}, auth = true) {
+      const headers = Object.assign({ apikey: SB_KEY, "Content-Type": "application/json" }, opts.headers || {});
+      if (auth) headers.Authorization = "Bearer " + await cloud.token();
+      const r = await fetch(SB_URL + path, Object.assign({}, opts, { headers, cache: "no-store" }));
+      const txt = await r.text(); let j = null; try { j = txt ? JSON.parse(txt) : null; } catch (_) {}
+      if (!r.ok) {
+        const e = new Error((j && (j.msg || j.message || j.error_description || j.error)) || ("Erreur " + r.status));
+        e.status = r.status;
+        if (auth && r.status === 401) throw new AuthError(e.message);
+        throw e;
+      }
+      return j;
+    },
+    saveSession(j) {
+      const p = jwtPayload(j.access_token), u = j.user || { id: p.sub, email: p.email };
+      cloud.session = { access_token: j.access_token, refresh_token: j.refresh_token,
+        expires_at: Number(j.expires_at) || Math.floor(Date.now() / 1000) + (Number(j.expires_in) || 3600), user: { id: u.id, email: u.email } };
+      ls.set(LS_KEY, cloud.session);
+      if (idb) setMeta("session", cloud.session).catch(() => {}); // copie de secours (iPhone)
+    },
+    storedSession() {
+      const a = ls.get(LS_KEY), b = S.meta.session, ok = x => x && x.user && x.user.id && x.refresh_token;
+      if (ok(a) && ok(b)) return (b.expires_at || 0) > (a.expires_at || 0) ? b : a;
+      return ok(a) ? a : ok(b) ? b : null;
+    },
+    async token() {
+      const s = cloud.session; if (!s) throw new AuthError("non connecté");
+      if (s.expires_at - 60 > Date.now() / 1000) return s.access_token;
+      if (!cloud._refreshing) cloud._refreshing = (async () => {
+        try {
+          const r = await fetch(SB_URL + "/auth/v1/token?grant_type=refresh_token", { method: "POST", cache: "no-store",
+            headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: s.refresh_token }) });
+          const j = await r.json().catch(() => null);
+          if (r.ok && j && j.access_token) { cloud.saveSession(j); return; }
+          if (r.status >= 400 && r.status < 500) {
+            const st = cloud.storedSession();
+            if (st && st.refresh_token !== s.refresh_token && st.expires_at - 60 > Date.now() / 1000) { cloud.session = st; return; }
+            throw new AuthError("session expirée");
+          }
+          throw new Error("Serveur indisponible");
+        } finally { cloud._refreshing = null; }
+      })();
+      await cloud._refreshing;
+      return cloud.session.access_token;
+    },
+    async refreshCount() { try { cloud.pending = (await getAll("outbox")).length; } catch (_) { cloud.pending = 0; } updateStatus(); },
+    schedule(ms) { if (!cloud.session) return; clearTimeout(cloud.timer); cloud.timer = setTimeout(() => cloud.syncNow(true), ms); cloud.refreshCount(); },
+    rows: items => items.map(o => ({ user_id: cloud.session.user.id, store: o.store, id: o.id, data: o.data, deleted: o.deleted })),
+    async push() {
+      const items = await getAll("outbox");
+      for (let i = 0; i < items.length; i += 500) {
+        const part = items.slice(i, i + 500);
+        await cloud.api(`/rest/v1/${TABLE}?on_conflict=user_id,store,id`, { method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(cloud.rows(part)) });
+        const cur = new Map((await getAll("outbox")).map(o => [o.key, JSON.stringify(o)]));
+        await tx("outbox", "readwrite", s => { part.forEach(o => { if (cur.get(o.key) === JSON.stringify(o)) s.delete(o.key); }); });
+      }
+      return items.length;
+    },
+    async pull() {
+      let since = S.meta.lastPull || "1970-01-01T00:00:00Z", changed = 0;
+      for (;;) {
+        const rows = await cloud.api(`/rest/v1/${TABLE}?select=store,id,data,deleted,updated_at&updated_at=gt.${encodeURIComponent(since)}&order=updated_at.asc&limit=1000`);
+        if (!rows || !rows.length) break;
+        const pend = new Set((await getAll("outbox")).map(o => o.key));
+        await new Promise((res, rej) => {
+          const t = idb.transaction(DATA_STORES, "readwrite");
+          rows.forEach(r => {
+            if (!DATA_STORES.includes(r.store) || pend.has(r.store + "/" + r.id)) return; // une modif locale plus récente attend d'être envoyée
+            const st = t.objectStore(r.store);
+            if (r.deleted) st.delete(r.id); else st.put(r.data);
+            changed++;
+          });
+          t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+        });
+        since = rows[rows.length - 1].updated_at;
+        await setMeta("lastPull", since);
+        if (rows.length < 1000) break;
+      }
+      return changed;
+    },
+    async syncNow(silent) {
+      if (!cloud.session) return;
+      if (!navigator.onLine) { await cloud.refreshCount(); if (!silent) toast("Pas de réseau : la synchro partira au retour d'internet", true); return; }
+      if (cloud.busy) { cloud.again = true; return; }
+      cloud.busy = true; cloud.again = false; clearTimeout(cloud.timer); updateStatus();
+      try {
+        await cloud.push();
+        const n = await cloud.pull();
+        if (n) { await loadAll(); if (!$("sheet").classList.contains("open")) renderAll(); }
+        cloud.err = null; cloud.last = Date.now();
+        if (!silent) toast("Synchronisé" + (n ? ` · ${n} mise(s) à jour reçue(s)` : ""));
+      } catch (e) {
+        if (e instanceof AuthError) { cloud.busy = false; cloud.expired(); return; }
+        cloud.err = frErr(e && e.message);
+        if (!silent) toast("Synchro impossible : " + cloud.err, true);
+      } finally {
+        cloud.busy = false; await cloud.refreshCount();
+        if (cloud.again) cloud.schedule(800);
+      }
+    },
+    flush() {
+      const s = cloud.session;
+      if (!s || !navigator.onLine || cloud.busy || s.expires_at - 30 < Date.now() / 1000) return;
+      getAll("outbox").then(items => {
+        if (!items.length) return;
+        const body = JSON.stringify(cloud.rows(items)); if (body.length > 60000) return;
+        fetch(SB_URL + `/rest/v1/${TABLE}?on_conflict=user_id,store,id`, { method: "POST", keepalive: true, body,
+          headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" } }).catch(() => {});
+      }).catch(() => {});
+    },
+    statusText() {
+      if (!navigator.onLine) return cloud.pending ? `Hors ligne · ${cloud.pending} modif. en attente` : "Hors ligne · données sur cet appareil";
+      if (cloud.busy) return "Synchronisation…";
+      if (cloud.err) return "Synchro en échec · nouvel essai automatique";
+      if (cloud.pending) return `${cloud.pending} modif. à envoyer…`;
+      return cloud.last ? "Synchronisé · " + hhmm(cloud.last) : "Connecté";
+    },
+    async start() {
+      cloud.bindForm();
+      if (!cloud.readLink()) cloud.session = cloud.storedSession();
+      if (cloud.session && cloud.session.user && cloud.session.user.id) {
+        await cloud.enter();
+        if (cloud.recovery) cloud.showAuth("newpass");
+      } else cloud.showAuth("login");
+    },
+    readLink() {
+      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+      if (h.get("error_description")) {
+        history.replaceState(null, "", location.pathname + location.search);
+        cloud.linkMsg = "Lien invalide ou expiré : " + h.get("error_description");
+        return false;
+      }
+      if (!h.get("access_token")) return false;
+      cloud.saveSession({ access_token: h.get("access_token"), refresh_token: h.get("refresh_token"), expires_at: h.get("expires_at"), expires_in: h.get("expires_in") });
+      cloud.recovery = h.get("type") === "recovery";
+      if (h.get("type") === "signup") cloud.linkMsg = "Email confirmé, bienvenue !";
+      history.replaceState(null, "", location.pathname + location.search);
+      return true;
+    },
+    async enter() {
+      const u = cloud.session.user;
+      if (S.meta.userId && S.meta.userId !== u.id) await cloud.wipeLocal(); // un autre compte utilisait cet appareil
+      if (S.meta.userId !== u.id) { await setMeta("userId", u.id); await setMeta("lastPull", undefined); }
+      $("auth").hidden = true;
+      if (cloud.linkMsg) { toast(cloud.linkMsg); cloud.linkMsg = null; }
+      clearInterval(cloud.poll);
+      cloud.poll = setInterval(() => { if (document.visibilityState === "visible") cloud.syncNow(true); }, 30000);
+      await cloud.refreshCount();
+      cloud.syncNow(true);
+    },
+    async wipeLocal() {
+      await new Promise((res, rej) => {
+        const t = idb.transaction([...DATA_STORES, "outbox"], "readwrite");
+        [...DATA_STORES, "outbox"].forEach(n => t.objectStore(n).clear());
+        t.oncomplete = res; t.onerror = () => rej(t.error);
+      });
+      await setMeta("lastPull", undefined); await setMeta("userId", undefined);
+      await loadAll();
+    },
+    expired() {
+      cloud.session = null; ls.set(LS_KEY, null); setMeta("session", undefined).catch(() => {}); clearInterval(cloud.poll);
+      cloud.showAuth("login", "Ta session a expiré : reconnecte-toi. Tes saisies sont gardées.");
+    },
+    async signOut() {
+      if (cloud.session && navigator.onLine) cloud.api("/auth/v1/logout", { method: "POST" }).catch(() => {});
+      clearInterval(cloud.poll); clearTimeout(cloud.timer);
+      cloud.session = null; ls.set(LS_KEY, null); await setMeta("session", undefined);
+      await cloud.wipeLocal();
+      renderAll(); cloud.showAuth("login", "Tu es déconnecté.");
+    },
+    showAuth(mode, msg, isErr) {
+      cloud.mode = mode;
+      const T = {
+        login: ["Connexion", "Connecte-toi pour retrouver tes comptes sur ton téléphone et sur ordinateur.", "Se connecter"],
+        signup: ["Créer un compte", "Choisis ton email et un mot de passe (8 caractères minimum).", "Créer mon compte"],
+        forgot: ["Mot de passe oublié", "Entre ton email : tu recevras un lien pour choisir un nouveau mot de passe.", "Envoyer le lien"],
+        newpass: ["Nouveau mot de passe", "Choisis ton nouveau mot de passe (8 caractères minimum).", "Enregistrer"]
+      }[mode];
+      $("aTitle").textContent = T[0]; $("aSub").textContent = T[1]; $("aSubmit").textContent = T[2];
+      $("aEmailRow").hidden = mode === "newpass"; $("aPassRow").hidden = mode === "forgot";
+      $("aPass").autocomplete = mode === "login" ? "current-password" : "new-password";
+      $("aSwitch").textContent = mode === "login" ? "Créer un compte" : "J'ai déjà un compte";
+      $("aSwitch").hidden = mode === "newpass"; $("aForgot").hidden = mode !== "login";
+      const m = $("aMsg"); m.hidden = !msg; m.textContent = msg || ""; m.className = "msg" + (isErr ? " err" : "");
+      if (cloud.linkMsg && !msg) { m.hidden = false; m.textContent = cloud.linkMsg; m.className = "msg err"; cloud.linkMsg = null; }
+      const pk = mode === "login" && passkey.supported();
+      $("aPasskey").hidden = !pk; $("aOr").hidden = !pk;
+      $("aPasskey").classList.toggle("ghost", !passkey.known()); $("aPasskey").classList.toggle("primary", passkey.known());
+      $("aSubmit").classList.toggle("ghost", pk && passkey.known()); $("aSubmit").classList.toggle("primary", !(pk && passkey.known()));
+      $("auth").hidden = false; $("aPass").value = "";
+    },
+    bindForm() {
+      $("aSwitch").onclick = () => cloud.showAuth(cloud.mode === "login" ? "signup" : "login");
+      $("aForgot").onclick = () => cloud.showAuth("forgot");
+      $("aPasskey").onclick = () => passkey.login();
+      $("aForm").onsubmit = async ev => {
+        ev.preventDefault();
+        const email = $("aEmail").value.trim().toLowerCase(), pass = $("aPass").value, mode = cloud.mode;
+        if (mode !== "newpass" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { cloud.showAuth(mode, "Adresse email invalide.", true); return; }
+        if (mode !== "forgot" && pass.length < 8) { cloud.showAuth(mode, "Mot de passe : 8 caractères minimum.", true); $("aEmail").value = email; return; }
+        const b = $("aSubmit"); b.disabled = true; const old = b.textContent; b.textContent = "Patiente…";
+        try {
+          if (mode === "login") {
+            cloud.saveSession(await cloud.api("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password: pass }) }, false));
+            await cloud.enter(); renderAll(); toast("Connecté");
+          } else if (mode === "signup") {
+            const j = await cloud.api("/auth/v1/signup?redirect_to=" + encodeURIComponent(SITE), { method: "POST", body: JSON.stringify({ email, password: pass }) }, false);
+            if (j && j.access_token) { cloud.saveSession(j); await cloud.enter(); renderAll(); toast("Compte créé"); }
+            else { cloud.showAuth("login", `Compte créé. Un email de confirmation a été envoyé à ${email} : clique sur le lien, puis connecte-toi ici.`); $("aEmail").value = email; }
+          } else if (mode === "forgot") {
+            await cloud.api("/auth/v1/recover?redirect_to=" + encodeURIComponent(SITE), { method: "POST", body: JSON.stringify({ email }) }, false);
+            cloud.showAuth("login", `Si un compte existe pour ${email}, un lien vient d'être envoyé.`); $("aEmail").value = email;
+          } else if (mode === "newpass") {
+            await cloud.api("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password: pass }) });
+            cloud.recovery = false; $("auth").hidden = true; toast("Mot de passe modifié");
+          }
+        } catch (e) {
+          cloud.showAuth(mode, frErr(e && e.message), true); $("aEmail").value = email;
+        } finally { b.disabled = false; if (cloud.mode === mode) b.textContent = old; }
+      };
+    }
+  };
+
+  function updateStatus() {
+    $("status").textContent = CLOUD ? (cloud.session ? cloud.statusText() : "Non connecté") : "Mode local · données sur cet appareil";
+  }
+
+  // ================= DÉMARRAGE =================
+  (async () => {
+    try { idb = await openDb(); await loadAll(); }
+    catch (e) { document.body.innerHTML = `<p style="padding:24px">Impossible d'ouvrir la base de l'appareil (mode navigation privée ?).</p>`; return; }
+    try { const t = localStorage.getItem("zakat.tab"); if (t && FAB[t]) setTab(t); } catch (_) {}
+    if (!S.settings.hawlStart) await saveSettings({ hawlStart: todayIso() });
+    market = S.meta["market_" + S.settings.ref] || null;
+    renderAll();
+    if (CLOUD) await cloud.start();
+    loadMarket();
+    window.addEventListener("online", () => { updateStatus(); loadMarket(); if (CLOUD) cloud.syncNow(true); });
+    window.addEventListener("offline", updateStatus);
+    document.addEventListener("visibilitychange", () => { if (CLOUD && document.visibilityState === "hidden") cloud.flush(); else if (document.visibilityState === "visible") { if (CLOUD) cloud.syncNow(true); loadMarket(); } });
+    if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  })();
+})();
+</script>
+</body>
+</html>
