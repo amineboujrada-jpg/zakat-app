@@ -220,8 +220,8 @@
   const CLOUD = !!(CFG.supabaseUrl && CFG.supabaseKey);
 
   // ================= BASE DE DONNÉES (IndexedDB, dans le téléphone) =================
-  const DB_NAME = "zakat-app", DB_VER = 1;
-  const DATA_STORES = ["accounts", "loans", "payments", "debts", "settings"];
+  const DB_NAME = "zakat-app", DB_VER = 2;
+  const DATA_STORES = ["accounts", "loans", "payments", "debts", "settings", "years", "snapshots"];
   let idb = null;
   function openDb() {
     return new Promise((res, rej) => {
@@ -249,10 +249,12 @@
   async function setMeta(k, v) { S.meta[k] = v; await tx("meta", "readwrite", s => (v === undefined ? s.delete(k) : s.put({ k, v }))); }
 
   // État en mémoire (copie de la base)
-  const DEFAULT_SETTINGS = { id: "main", ref: "EUR", nisabRef: "gold", surplusCents: 0, surplusCur: "EUR", hawlStart: null };
-  const S = { accounts: [], loans: [], payments: [], debts: [], settings: Object.assign({}, DEFAULT_SETTINGS), meta: {} };
+  const DEFAULT_SETTINGS = { id: "main", ref: "EUR", nisabRef: "gold", surplusCents: 0, surplusCur: "EUR", hawlStart: null, hawlEvents: [] };
+  const S = { accounts: [], loans: [], payments: [], debts: [], years: [], snapshots: [], settings: Object.assign({}, DEFAULT_SETTINGS), meta: {} };
   async function loadAll() {
-    const [accounts, loans, payments, debts, settings, meta] = await Promise.all(["accounts", "loans", "payments", "debts", "settings", "meta"].map(getAll));
+    const [accounts, loans, payments, debts, settings, meta, years, snapshots] = await Promise.all(["accounts", "loans", "payments", "debts", "settings", "meta", "years", "snapshots"].map(getAll));
+    S.years = years.sort((a, b) => (a.start < b.start ? -1 : 1));
+    S.snapshots = snapshots.sort((a, b) => (a.id < b.id ? -1 : 1));
     const byDate = (a, b) => (a.created || "") < (b.created || "") ? -1 : 1;
     S.accounts = accounts.sort(byDate); S.loans = loans.sort(byDate);
     S.payments = payments.sort((a, b) => (a.date < b.date ? 1 : -1)); S.debts = debts.sort(byDate);
@@ -287,7 +289,26 @@
     ["husband", "Mon mari (je suis son épouse)", ["", "École malikite : déconseillé mais valable ; permis sans divergence si c'est pour payer ses dettes."]],
     ["dependent", "Personne à ma charge (parent, enfant, épouse)", ["bad", "Interdit : on ne verse pas sa zakat aux personnes dont on a la charge."]]
   ];
-  const LUNAR_YEAR_DAYS = 354;
+  // ---------- Calendrier hégirien (Umm al-Qura) ----------
+  const HIJ_FMT = new Intl.DateTimeFormat("fr-FR-u-ca-islamic-umalqura", { day: "numeric", month: "long", year: "numeric" });
+  const HIJ_NUM = new Intl.DateTimeFormat("en-u-ca-islamic-umalqura-nu-latn", { day: "numeric", month: "numeric", year: "numeric" });
+  const hijri = s => HIJ_FMT.format(fromIso(s)).replace(/\s*AH$/, "").replace(/ hégire$/, "");
+  const hparts = d => { const o = {}; HIJ_NUM.formatToParts(d).forEach(p => { if (p.type !== "literal") o[p.type] = Number(p.value); }); return o; };
+  const addDaysIso = (s, n) => { const d = fromIso(s); d.setDate(d.getDate() + n); return iso(d); };
+  // Échéance du hawl : même jour du calendrier hégirien, un an plus tard
+  function hawlEnd(start) {
+    const p0 = hparts(fromIso(start));
+    let best = null;
+    for (let n = 340; n <= 370; n++) {
+      const p = hparts(fromIso(addDaysIso(start, n)));
+      if (p.year === p0.year + 1 && p.month === p0.month) {
+        if (p.day === p0.day) return addDaysIso(start, n);
+        if (p.day < p0.day) best = addDaysIso(start, n); // mois plus court : dernier jour du mois
+      }
+    }
+    return best ? addDaysIso(best, 1) : addDaysIso(start, 354);
+  }
+  const dboth = s => `${hijri(s)} (${dfr(s)})`;
 
   function toast(msg, err) {
     const t = $("toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
@@ -348,16 +369,20 @@
   // ================= CALCUL =================
   const loanAssets = () => S.loans.filter(l => l.outstanding > 0)
     .map(l => ({ id: l.id, name: "Prêt à " + l.name, type: "loan", cents: l.outstanding, currency: l.currency, secure: (l.risk || 0) === 0 }));
-  const hawlStart = () => S.settings.hawlStart || todayIso();
+  const hawlStart = () => S.settings.hawlStart;
   function compute() {
     if (!market) return null;
     const st = S.settings;
     const r = Z.calculate([...S.accounts, ...loanAssets()], S.debts, market, {
       madhhab: "maliki", nisabRef: st.nisabRef, surplusCents: toRef(st.surplusCents || 0, st.surplusCur) || 0 });
-    const since = hawlStart();
-    r.repayZakat = S.loans.reduce((s, l) => s + (l.repayments || []).filter(p => p.date >= since).reduce((t, p) => t + (toRef(p.zakat, l.currency) || 0), 0), 0);
-    r.totalDue = r.dueCents + r.repayZakat;
-    r.paid = S.payments.filter(p => p.date >= since).reduce((s, p) => s + (toRef(p.cents, p.currency) || 0), 0);
+    // Zakat due : années de zakat clôturées (montant figé à l'échéance) + remboursements de prêts reçus.
+    // Les versements viennent en déduction, du plus ancien au plus récent.
+    r.repayItems = [];
+    S.loans.forEach(l => (l.repayments || []).forEach(p => r.repayItems.push({ date: p.date, label: "Remboursement de " + l.name, cents: toRef(p.zakat, l.currency) || 0 })));
+    r.repayZakat = r.repayItems.reduce((s, x) => s + x.cents, 0);
+    r.yearsDue = S.years.reduce((s, y) => s + (toRef(y.dueCents, y.ref) || 0), 0);
+    r.totalDue = r.yearsDue + r.repayZakat;
+    r.paid = S.payments.reduce((s, p) => s + (toRef(p.cents, p.currency) || 0), 0);
     r.remaining = Math.max(0, r.totalDue - r.paid);
     r.loansRef = S.loans.reduce((s, l) => s + (toRef(l.outstanding, l.currency) || 0), 0);
     r.atRisk = S.loans.reduce((s, l) => s + Math.round((toRef(l.outstanding, l.currency) || 0) * (l.risk || 0) / 100), 0);
@@ -463,26 +488,52 @@
   }
 
   function renderZakat(r) {
-    const start = hawlStart(), end = iso(new Date(fromIso(start).getTime() + LUNAR_YEAR_DAYS * 86400000)), left = daysTo(end);
-    const pays = S.payments.filter(p => p.date >= start).map(p => `<button class="item" data-pay="${esc(p.id)}">
+    const st = S.settings, start = hawlStart(), end = start ? hawlEnd(start) : null, left = end ? daysTo(end) : null;
+    const nisabLbl = st.nisabRef === "silver" ? "595 g d'argent" : "85 g d'or";
+    let hero;
+    if (!r) hero = `<div class="hero"><div class="top"><span class="lbl">Zakat</span></div><div class="big">…</div><div class="line"><span>Récupération des cours du jour…</span></div></div>`;
+    else if (!start) hero = `<div class="hero">
+        <div class="top"><span class="lbl">Année de zakat</span><span class="badge off">Sous le nisab</span></div>
+        <div class="big" style="font-size:24px">Pas d'année en cours</div>
+        <div class="line"><span>Patrimoine soumis</span><b>${money(r.baseCents)}</b></div>
+        <div class="line"><span>Nisab du jour (${nisabLbl})</span><b>${money(r.nisabCents)}</b></div>
+        <div class="line"><span>L'année de zakat commencera le jour où ton patrimoine atteindra le nisab.</span></div></div>`;
+    else hero = `<div class="hero">
+        <div class="top"><span class="lbl">${left <= 0 ? "Zakat de l'année · échéance atteinte" : "Zakat estimée à l'échéance"}</span><span class="badge${r.reached ? "" : " off"}">${r.reached ? "Nisab atteint" : "Sous le nisab"}</span></div>
+        <div class="big">${money(r.dueCents)}</div>
+        <div class="line"><span>Patrimoine soumis aujourd'hui</span><b>${money(r.baseCents)}</b></div>
+        <div class="line"><span>Nisab du jour (${nisabLbl})</span><b>${money(r.nisabCents)}</b></div>
+        <div class="line"><span>Échéance</span><b>${left > 0 ? "dans " + left + " j" : "aujourd'hui"}</b></div></div>`;
+    const yearCard = start ? `<div class="card" style="margin-top:10px">
+        <div style="font-weight:700">Année de zakat en cours</div>
+        <div class="meta" style="color:var(--muted);font-size:13.5px;margin-top:4px;line-height:1.5">Début : ${dboth(start)}<br>Échéance : ${dboth(end)}</div>
+        ${left <= 0 ? `<div class="info ok" style="margin:10px 0 0">L'année est terminée. Mets à jour tes soldes, puis calcule ta zakat : le montant sera figé avec les cours du jour.</div>
+          <div class="row"><button class="btn primary" id="closeYear">Calculer ma zakat de l'année</button></div>`
+        : `<p class="note" style="margin:8px 0 0">Montant indicatif, avec tes soldes et les cours d'aujourd'hui. Le montant définitif se calcule le jour de l'échéance.</p>`}
+        <button class="linkish" id="hawlBtn">Modifier la date de début</button></div>`
+      : `<div class="list" style="margin-top:10px"><button class="item" id="hawlBtn"><span class="mid"><div>Indiquer le début de mon année de zakat</div><small>Si tu connais déjà ta date (ex. 1er Ramadan)</small></span><span class="amt">›</span></button></div>`;
+    const alerts = (st.hawlEvents || []).slice(-1).filter(e => daysTo(e.date) > -30 && (e.type === "broken" ? !st.hawlStart : st.hawlStart === e.date)).map(e => `<div class="alert${e.type === "broken" ? " late" : ""}">${e.type === "broken" ? "⚠️" : "✅"}<span>${esc(e.text)}</span></div>`).join("");
+    const dueItems = [
+      ...S.years.map(y => ({ date: y.end, label: `Zakat de l'année ${hijri(y.start).replace(/^.* (\d+)$/, "$1")}`, sub: `Calculée le ${dfr(y.closedAt)} · assiette ${money(y.baseCents, y.ref)}`, cents: toRef(y.dueCents, y.ref) || 0, year: y.id })),
+      ...(r ? r.repayItems : []).map(x => ({ date: x.date, label: x.label, sub: `Zakat d'une année · ${dfr(x.date)}`, cents: x.cents }))
+    ].sort((a, b) => (a.date < b.date ? -1 : 1));
+    let pool = r ? r.paid : 0;
+    const dueHtml = dueItems.map(it => { const used = Math.min(pool, it.cents); pool -= used; const rest = it.cents - used;
+      return `<${it.year ? `button data-year="${esc(it.year)}"` : "div"} class="item"><span class="mid"><div>${esc(it.label)}</div><small>${esc(it.sub)}</small></span>
+        <span class="amt">${money(it.cents)}<small>${rest > 0 ? "reste " + money(rest) : "✓ versée"}</small></span></${it.year ? "button" : "div"}>`; }).join("");
+    const pays = S.payments.map(p => `<button class="item" data-pay="${esc(p.id)}">
         <span class="mid"><div>${esc(p.beneficiary || "Versement")}</div><small>${esc(p.category)} · ${dfr(p.date)}</small></span>
-        <span class="amt">${money(p.cents, p.currency)}</span></button>`).join("") || `<div class="item empty">Aucun versement cette année.</div>`;
+        <span class="amt">${money(p.cents, p.currency)}</span></button>`).join("") || `<div class="item empty">Aucun versement enregistré.</div>`;
     const debts = S.debts.map(d => `<button class="item" data-debt="${esc(d.id)}"><span class="mid"><div>${esc(d.name)}</div></span><span class="amt">${money(d.cents, d.currency)}</span></button>`).join("");
-    const st = S.settings;
     $("p-zakat").innerHTML = `
-      <div class="hero">
-        <div class="top"><span class="lbl">Zakat à verser</span>${r ? `<span class="badge${r.reached ? "" : " off"}">${r.reached ? "Nisab atteint" : "Sous le nisab"}</span>` : ""}</div>
-        <div class="big">${r ? money(r.totalDue) : "…"}</div>
-        <div class="line"><span>Patrimoine soumis</span><b>${r ? money(r.baseCents) : "…"}</b></div>
-        <div class="line"><span>Nisab du jour (${st.nisabRef === "silver" ? "595 g d'argent" : "85 g d'or"})</span><b>${r ? money(r.nisabCents) : "…"}</b></div>
-        ${r && r.repayZakat ? `<div class="line"><span>Dont remboursements reçus</span><b>${money(r.repayZakat)}</b></div>` : ""}
-      </div>
-      <div class="kpis">
-        <div class="kpi"><div class="l">Versé cette année</div><div class="v">${r ? money(r.paid) : "…"}</div></div>
+      ${hero}${alerts}${yearCard}
+      <div class="list" style="margin-top:10px"><button class="item" id="detailBtn"><span class="mid"><div>Détail du calcul</div><small>Chaque compte, les taux appliqués, l'assiette</small></span><span class="amt">›</span></button></div>
+      <h2>Zakat à verser</h2>
+      <div class="kpis" style="margin-top:0">
         <div class="kpi"><div class="l">Reste à verser</div><div class="v">${r ? money(r.remaining) : "…"}</div></div>
+        <div class="kpi"><div class="l">Déjà versé</div><div class="v">${r ? money(r.paid) : "…"}</div></div>
       </div>
-      <p class="note">Année de zakat commencée le ${dfr(start)} · échéance le ${dfr(end)} (${left >= 0 ? "dans " + left + " jours" : "dépassée"}). <button class="linkish" id="hawlBtn">Modifier</button></p>
-      <div class="list" style="margin-top:12px"><button class="item" id="detailBtn"><span class="mid"><div>Détail du calcul</div><small>Chaque compte, les taux appliqués, l'assiette</small></span><span class="amt">›</span></button></div>
+      <div class="list" style="margin-top:10px">${dueHtml || `<div class="item empty">Rien à verser pour l'instant : la zakat de l'année sera ajoutée ici à l'échéance.</div>`}</div>
       <h2>Versements <button id="addPay">＋ Ajouter</button></h2>
       <div class="list">${pays}</div>
       <h2>Mes dettes <button id="addDebt">＋ Ajouter</button></h2>
@@ -492,13 +543,79 @@
     const P = $("p-zakat");
     P.querySelectorAll("[data-pay]").forEach(b => (b.onclick = () => paymentSheet(S.payments.find(p => p.id === b.dataset.pay))));
     P.querySelectorAll("[data-debt]").forEach(b => (b.onclick = () => debtSheet(S.debts.find(d => d.id === b.dataset.debt))));
+    P.querySelectorAll("[data-year]").forEach(b => (b.onclick = () => yearSheet(S.years.find(y => y.id === b.dataset.year))));
     $("addPay").onclick = () => paymentSheet(); $("addDebt").onclick = () => debtSheet();
     $("surplusBtn").onclick = surplusSheet; $("detailBtn").onclick = () => detailSheet(r); $("hawlBtn").onclick = hawlSheet;
+    if ($("closeYear")) $("closeYear").onclick = () => closeYearSheet(r);
+  }
+
+  // ---------- Suivi du hawl ----------
+  // À chaque ouverture, l'appli note le patrimoine du jour face au nisab.
+  // École malikite : si le patrimoine passe sous le nisab pendant l'année, le hawl est interrompu
+  // et une nouvelle année commence le jour où il atteint de nouveau le nisab.
+  let hawlChecking = false;
+  async function hawlCheck(r) {
+    if (!r || hawlChecking) return;
+    hawlChecking = true;
+    try {
+      const today = todayIso(), st = S.settings, last = S.snapshots[S.snapshots.length - 1];
+      if (!last || last.id !== today || last.base !== r.baseCents || last.reached !== r.reached) {
+        await put("snapshots", { id: today, base: r.baseCents, nisab: r.nisabCents, ref: market.ref, reached: r.reached });
+        S.snapshots = (await getAll("snapshots")).sort((a, b) => (a.id < b.id ? -1 : 1));
+      }
+      const ev = (type, text) => [...(st.hawlEvents || []).slice(-9), { date: today, type, text }];
+      if (!st.hawlStart && r.reached) {
+        await saveSettings({ hawlStart: today, hawlEvents: ev("start", `Ton patrimoine a atteint le nisab : ton année de zakat commence aujourd'hui (${hijri(today)}).`) });
+        toast("Nisab atteint : ton année de zakat commence aujourd'hui"); renderAll();
+      } else if (st.hawlStart && !r.reached && today < hawlEnd(st.hawlStart)) {
+        await saveSettings({ hawlStart: null, hawlEvents: ev("broken", `Ton patrimoine est passé sous le nisab le ${dfr(today)} : selon l'école malikite, l'année de zakat est interrompue. Elle recommencera le jour où il atteindra de nouveau le nisab.`) });
+        toast("Patrimoine sous le nisab : année de zakat interrompue", true); renderAll();
+      }
+    } catch (_) {} finally { hawlChecking = false; }
+  }
+
+  function closeYearSheet(r) {
+    if (!r) return toast("Cours pas encore disponibles", true);
+    const start = hawlStart(), end = hawlEnd(start);
+    openSheet(`<h3>Zakat de l'année</h3>
+      <div class="cur">Année du ${dboth(start)} au ${dboth(end)}. Vérifie que tes soldes sont à jour : le montant sera figé avec les cours d'aujourd'hui.</div>
+      <div class="calc">
+        <span>Patrimoine soumis</span><span>${money(r.baseCents)}</span>
+        <span>Nisab du jour</span><span>${money(r.nisabCents)}</span>
+        <span>Statut</span><span>${r.reached ? "Atteint" : "Non atteint"}</span>
+        <span class="tot">Zakat (2,5 %)</span><span class="tot">${money(r.dueCents)}</span></div>
+      <div class="row"><button class="btn primary" id="cySave">Valider et figer ce montant</button></div>
+      <div class="row"><button class="btn ghost" id="cyAcc">Mettre à jour mes soldes d'abord</button></div>`);
+    $("cyAcc").onclick = () => { closeSheet(); setTab("comptes"); };
+    $("cySave").onclick = async () => {
+      const y = { id: start, start, end, closedAt: todayIso(), ref: market.ref, marketDate: market.date, goldCents: market.goldCents,
+        baseCents: r.baseCents, nisabCents: r.nisabCents, dueCents: r.dueCents, lines: r.lines.map(l => ({ label: l.label, refCents: l.refCents })) };
+      await put("years", y);
+      // Nouvelle année : commence à l'échéance si le patrimoine est toujours au-dessus du nisab
+      await saveSettings({ hawlStart: r.reached ? end : null });
+      await loadAll(); closeSheet(); renderAll();
+      toast(r.dueCents ? "Zakat de l'année enregistrée : " + money(r.dueCents) : "Année clôturée : pas de zakat due");
+    };
+  }
+
+  function yearSheet(y) {
+    openSheet(`<h3>Zakat de l'année</h3>
+      <div class="cur">Année du ${dboth(y.start)} au ${dboth(y.end)}. Montant figé le ${dfr(y.closedAt)} avec les cours du ${dfr(y.marketDate)}.</div>
+      <div class="calc">${(y.lines || []).map(l => `<span>${esc(l.label)}</span><span>${money(l.refCents, y.ref)}</span>`).join("")}
+        <span class="tot">Assiette</span><span class="tot">${money(y.baseCents, y.ref)}</span>
+        <span>Nisab</span><span>${money(y.nisabCents, y.ref)}</span>
+        <span class="tot">Zakat (2,5 %)</span><span class="tot">${money(y.dueCents, y.ref)}</span></div>
+      <div class="row"><button class="btn danger" id="yDel">Annuler ce calcul</button></div>`);
+    $("yDel").onclick = async () => {
+      if (!confirm("Annuler le calcul de cette année ? L'année redeviendra en cours.")) return;
+      await del("years", y.id); await saveSettings({ hawlStart: y.start }); await loadAll(); closeSheet(); renderAll(); toast("Calcul annulé");
+    };
   }
 
   function renderAll() {
     const r = compute();
     renderAccounts(r); renderLoans(r); renderZakat(r); updateStatus();
+    hawlCheck(r);
   }
 
   // ================= FORMULAIRES =================
@@ -657,13 +774,15 @@
   }
 
   function hawlSheet() {
-    openSheet(`<h3>Année de zakat</h3>
-      <div class="cur">La zakat est due quand ton patrimoine est resté au-dessus du nisab pendant une année lunaire (environ 354 jours). Indique le jour où commence ton année de zakat : les versements et remboursements comptent à partir de cette date.</div>
-      <label class="f" for="hDate">Début de l'année de zakat</label><input id="hDate" type="date" class="small" value="${hawlStart()}">
-      <div class="row"><button class="btn primary" id="hSave">Enregistrer</button></div>
-      <div class="row"><button class="btn ghost" id="hNew">Commencer une nouvelle année aujourd'hui</button></div>`);
+    const cur = hawlStart() || todayIso();
+    openSheet(`<h3>Début de l'année de zakat</h3>
+      <div class="cur">La zakat est due quand ton patrimoine est resté au-dessus du nisab pendant une année lunaire complète. L'échéance tombe le même jour du calendrier hégirien, un an plus tard. L'appli suit cette date toute seule, mais tu peux la corriger si tu connais la tienne.</div>
+      <label class="f" for="hDate">Date de début</label><input id="hDate" type="date" class="small" value="${cur}">
+      <div class="info ok" id="hInfo"></div>
+      <div class="row"><button class="btn primary" id="hSave">Enregistrer</button></div>`);
+    const info = () => { const v = $("hDate").value; $("hInfo").innerHTML = v ? `Début : ${esc(hijri(v))}<br>Échéance : ${esc(dboth(hawlEnd(v)))}` : ""; };
+    $("hDate").oninput = info; info();
     $("hSave").onclick = async () => { await saveSettings({ hawlStart: $("hDate").value || todayIso() }); closeSheet(); renderAll(); toast("Année de zakat mise à jour"); };
-    $("hNew").onclick = async () => { await saveSettings({ hawlStart: todayIso() }); closeSheet(); renderAll(); toast("Nouvelle année de zakat commencée"); };
   }
 
   function detailSheet(r) {
@@ -683,9 +802,7 @@
         <span class="tot">Assiette</span><span class="tot">${money(r.baseCents)}</span>
         <span>Nisab du jour</span><span>${money(r.nisabCents)}</span>
         <span>Statut</span><span>${r.reached ? "Atteint" : "Non atteint"}</span>
-        <span>Zakat sur le patrimoine (2,5 %)</span><span>${money(r.dueCents)}</span>
-        <span>Zakat sur remboursements reçus</span><span>${money(r.repayZakat)}</span>
-        <span class="tot">Total à verser</span><span class="tot">${money(r.totalDue)}</span></div>
+        <span class="tot">Zakat estimée (2,5 %)</span><span class="tot">${money(r.dueCents)}</span></div>
       ${ex ? `<div class="cur"><b>Non comptés :</b><ul style="margin:6px 0 0;padding-left:18px">${ex}</ul></div>` : ""}
       <div class="cur">Ce calcul suit les règles de l'école malikite telles que nous les avons comprises ; en cas de doute, demande l'avis d'un savant.</div>`);
   }
@@ -709,7 +826,7 @@
     if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);
     if ($("logout")) $("logout").onclick = async () => { if (!confirm("Se déconnecter ? Les données de cet appareil seront effacées (elles restent sur ton compte).")) return; closeSheet(); await cloud.signOut(); };
     $("exportBtn").onclick = () => {
-      const data = { app: "zakat", version: 1, exportedAt: new Date().toISOString(), accounts: S.accounts, loans: S.loans, payments: S.payments, debts: S.debts, settings: S.settings };
+      const data = { app: "zakat", version: 1, exportedAt: new Date().toISOString(), accounts: S.accounts, loans: S.loans, payments: S.payments, debts: S.debts, years: S.years, settings: S.settings };
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
       a.download = `zakat-sauvegarde-${todayIso()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -1035,7 +1152,6 @@
     try { idb = await openDb(); await loadAll(); }
     catch (e) { document.body.innerHTML = `<p style="padding:24px">Impossible d'ouvrir la base de l'appareil (mode navigation privée ?).</p>`; return; }
     try { const t = localStorage.getItem("zakat.tab"); if (t && FAB[t]) setTab(t); } catch (_) {}
-    if (!S.settings.hawlStart) await saveSettings({ hawlStart: todayIso() });
     market = S.meta["market_" + S.settings.ref] || null;
     renderAll();
     if (CLOUD) await cloud.start();
