@@ -388,8 +388,16 @@
 
   // ---------- Mouvements (wallet de zakat) ----------
   // Valeur soumise d'un compte, en devise de référence (bijou porté = 0)
+  const RISK_MAX = 20; // risque ≤ 20 % : prêt sûr, compté chaque année dans la zakat
+  const loanSure = l => (l.risk || 0) <= RISK_MAX;
+  // Valeur d'un compte en devise de référence, pour l'affichage (or porté compris)
+  function fullValue(a) {
+    if (a.type === "gold") return market ? Math.round(Z.pureGrams(a) * market.goldCents) : null;
+    if (a.type === "silver") return market ? Math.round(Z.pureGrams(a) * market.silverCents) : null;
+    return toRef(a.cents || 0, a.currency);
+  }
   function valueRef(a) {
-    if (!a) return 0;
+    if (!a || a.noZakat) return 0;
     if (a.type === "gold") return a.usage === "worn" || !market ? 0 : Math.round(Z.pureGrams(a) * market.goldCents);
     if (a.type === "silver") return market ? Math.round(Z.pureGrams(a) * market.silverCents) : 0;
     return toRef(a.cents || 0, a.currency) || 0;
@@ -413,7 +421,18 @@
 
   // ================= CALCUL =================
   const loanAssets = () => S.loans.filter(l => l.outstanding > 0)
-    .map(l => ({ id: l.id, name: "Prêt à " + l.name, type: "loan", cents: l.outstanding, currency: l.currency, secure: (l.risk || 0) === 0 }));
+    .map(l => ({ id: l.id, name: "Prêt à " + l.name, type: "loan", cents: l.outstanding, currency: l.currency, countYearly: loanSure(l) }));
+  // Zakat ajoutée au remboursement : seulement pour les prêts à risque (> 20 %), toutes les années écoulées
+  const repayZakatOf = (l, p) => loanSure(l) ? { years: 0, cents: 0 } : Z.zakatForPeriod(p.cents, l.date, p.date, hawlEnd);
+  // Wallet : un prêt sûr compte comme de l'argent toujours à toi (mouvements virtuels)
+  const loanMoves = () => {
+    const out = [];
+    S.loans.filter(loanSure).forEach(l => {
+      out.push({ date: l.date, cents: toRef(l.initial, l.currency) || 0 });
+      (l.repayments || []).forEach(p => out.push({ date: p.date, cents: -(toRef(p.cents, l.currency) || 0) }));
+    });
+    return out;
+  };
   const hawlStart = () => S.settings.hawlStart;
   function compute() {
     if (!market) return null;
@@ -423,10 +442,11 @@
     // Zakat due : années de zakat clôturées (montant figé à l'échéance) + remboursements de prêts reçus.
     // Les versements viennent en déduction, du plus ancien au plus récent.
     r.repayItems = [];
-    S.loans.forEach(l => (l.repayments || []).forEach(p => r.repayItems.push({ date: p.date, label: "Remboursement de " + l.name, cents: toRef(p.zakat, l.currency) || 0 })));
+    S.loans.forEach(l => (l.repayments || []).forEach(p => { const z = repayZakatOf(l, p); if (z.cents > 0)
+      r.repayItems.push({ date: p.date, label: "Remboursement de " + l.name, years: z.years, cents: toRef(z.cents, l.currency) || 0 }); }));
     r.repayZakat = r.repayItems.reduce((s, x) => s + x.cents, 0);
     if (walletMode()) {
-      r.wallet = Z.computeLots(S.movements.map(m => ({ date: m.date, cents: moveRef(m), nisab: m.nisab ? (m.ref === S.settings.ref ? m.nisab : toRef(m.nisab, m.ref)) : 0 })),
+      r.wallet = Z.computeLots([...S.movements.map(m => ({ date: m.date, cents: moveRef(m), nisab: m.nisab ? (m.ref === S.settings.ref ? m.nisab : toRef(m.nisab, m.ref)) : 0 })), ...loanMoves()],
         { today: todayIso(), hawlEnd, debtCents: r.deductibleCents });
     }
     r.yearsDue = S.years.reduce((s, y) => s + (toRef(y.dueCents, y.ref) || 0), 0);
@@ -435,17 +455,12 @@
     r.remaining = Math.max(0, r.totalDue - r.paid);
     r.loansRef = S.loans.reduce((s, l) => s + (toRef(l.outstanding, l.currency) || 0), 0);
     r.atRisk = S.loans.reduce((s, l) => s + Math.round((toRef(l.outstanding, l.currency) || 0) * (l.risk || 0) / 100), 0);
-    const accIds = new Set(S.accounts.map(a => a.id));
-    r.accountsTotal = r.lines.filter(l => accIds.has(l.id)).reduce((s, l) => s + l.refCents, 0)
-      + S.accounts.filter(a => r.excluded.some(e => e.id === a.id)).reduce((s, a) => s + Math.round(Z.pureGrams(a) * market.goldCents), 0);
+    r.loansSure = S.loans.filter(loanSure).reduce((s, l) => s + (toRef(l.outstanding, l.currency) || 0), 0);
+    r.loansRisky = r.loansRef - r.loansSure;
+    r.accountsTotal = S.accounts.reduce((s, a) => s + (fullValue(a) || 0), 0);
     return r;
   }
-  const accountValue = (a, r) => {
-    const l = r && r.lines.find(x => x.id === a.id);
-    if (l) return l.refCents;
-    if (a.type === "gold" && market) return Math.round(Z.pureGrams(a) * market.goldCents);
-    return toRef(a.cents || 0, a.currency);
-  };
+  const accountValue = a => fullValue(a);
 
   // ================= AFFICHAGE =================
   let tab = "comptes";
@@ -470,6 +485,27 @@
     return `<div class="rates">Cours du ${dfr(market.date)} · or ${money(market.goldCents)}/g · 1 ${ref} = ${r.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} ${other}</div>`;
   }
 
+
+  // ================= EXPLICATIONS =================
+  const HELP = {
+    loans: ["Crédits et zakat", `
+      <p>L'argent que tu as prêté t'appartient toujours : il compte dans ton patrimoine. La façon de le compter dépend du <b>risque</b> que tu indiques pour chaque prêt.</p>
+      <div class="info ok"><b>Risque de 0 à 20 % : prêt sûr</b><br>Tu es presque certain d'être remboursé. Le prêt est compté <b>chaque année</b> dans ta zakat, comme si l'argent était encore sur ton compte. Au remboursement, il n'y a rien de plus à payer.</div>
+      <div class="info"><b>Risque de plus de 20 % : prêt douteux</b><br>Tu n'es pas sûr de revoir cet argent. Il n'est <b>pas compté</b> tant qu'il n'est pas remboursé. Le jour où tu le récupères, l'appli ajoute la zakat de <b>toute la période</b> : 2,5 % pour chaque année lunaire complète écoulée depuis le prêt.</div>
+      <p class="note">Exemple : tu prêtes 1 000 € avec un risque de 50 %. Il est remboursé 2 ans et 3 mois plus tard : l'appli ajoute 2 × 25 € = 50 € de zakat.</p>
+      <p class="note">Tu peux changer le risque à tout moment avec « Modifier » ; le calcul s'adapte.</p>`],
+    exclude: ["Ne pas compter un compte", `
+      <p>Coche cette case pour un compte dont l'argent ne doit pas entrer dans ta zakat, par exemple :</p>
+      <ul style="margin:0 0 12px;padding-left:18px;line-height:1.6;color:var(--muted)"><li>un compte de <b>cotisations</b> ou une caisse commune qui ne t'appartient pas ;</li><li>l'argent d'une autre personne que tu gardes pour elle ;</li><li>de l'argent déjà mis de côté pour payer une dette.</li></ul>
+      <p class="note">Le compte reste affiché dans tes totaux, mais il n'est pas compté dans la zakat. En cas de doute, demande l'avis d'un savant.</p>`]
+  };
+  function helpSheet(k) { const h = HELP[k]; openSheet(`<h3>${h[0]}</h3><div class="cur" style="color:var(--fg)">${h[1]}</div><div class="row"><button class="btn primary" id="hlpOk">Compris</button></div>`); $("hlpOk").onclick = closeSheet; }
+  const riskPill = l => l.outstanding <= 0 ? "" : loanSure(l)
+    ? `<span class="pill ok">Compté dans la zakat</span>` : `<span class="pill soon">Hors zakat jusqu'au remboursement</span>`;
+  const riskText = r => r <= RISK_MAX
+    ? `<b>Risque ${r} % : prêt sûr.</b> Compté chaque année dans ta zakat, comme de l'argent sur ton compte. Rien de plus à payer au remboursement.`
+    : `<b>Risque ${r} % : prêt douteux.</b> Pas compté pendant le prêt. Au remboursement, l'appli ajoute la zakat de toutes les années écoulées (2,5 % par année lunaire).`;
+
   function renderAccounts(r) {
     const ref = S.settings.ref, other = ref === "MAD" ? "EUR" : "MAD";
     const total = r ? r.accountsTotal : null;
@@ -481,8 +517,8 @@
       const ex = r && r.excluded.find(e => e.id === a.id);
       let sub = a.type === "gold" ? `${String(a.grams).replace(".", ",")} g · ${a.carats} carats${a.usage === "worn" ? " · porté" : ""}`
         : a.type === "silver" ? `${String(a.grams).replace(".", ",")} g` : a.currency !== ref ? money(a.cents, a.currency) : TYPES[a.type];
-      if (ex) sub += " · non soumis à la zakat";
-      const val = accountValue(a, r);
+      if (a.noZakat) sub += " · hors zakat"; else if (ex) sub += " · non soumis à la zakat";
+      const val = accountValue(a);
       return `<button class="item" data-acc="${esc(a.id)}">${av}<span class="mid"><div>${esc(a.name)}</div><small>${esc(sub)}</small></span>
         <span class="amt">${val == null ? "…" : money(val)}</span></button>`;
     }).join("") || `<div class="item empty">Ajoute ton premier compte avec le bouton en bas.</div>`;
@@ -491,12 +527,22 @@
         <div class="top"><span class="lbl">Total de mes comptes</span></div>
         <div class="big">${total == null ? "…" : money(total)}</div>
         <div class="line"><span>Soit environ</span><b>${otherVal == null ? "…" : money(otherVal, other)}</b></div>
-        <div class="line"><span>Argent qu'on me doit</span><b>${r ? money(r.loansRef) : "…"}</b></div>
+        <div class="line"><span>Crédits (argent qu'on me doit)</span><b>${r ? money(r.loansRef) : "…"}</b></div>
+        <div class="line"><span>Patrimoine total</span><b>${r ? money(total + r.loansRef) : "…"}</b></div>
       </div>
       ${ratesLine()}
       <h2>Mes comptes</h2>
       <div class="list">${items}</div>
-      <p class="note">Touche un compte pour mettre à jour son solde.</p>`;
+      <p class="note">Touche un compte pour ajouter, retirer ou remplacer son solde.</p>
+      <h2>Mes crédits <button id="accLoanHelp">Comment ça compte ?</button></h2>
+      <div class="list">${S.loans.filter(l => l.outstanding > 0).map(l => `<button class="item" data-acc-loan="${esc(l.id)}">
+          <span class="av soft">${esc(l.name.slice(0, 2).toUpperCase())}</span>
+          <span class="mid"><div>${esc(l.name)}</div><small>Risque ${l.risk || 0} % · ${loanSure(l) ? "compté dans la zakat" : "hors zakat jusqu'au remboursement"}</small></span>
+          <span class="amt">${money(toRef(l.outstanding, l.currency) || 0)}${l.currency !== S.settings.ref ? `<small>${money(l.outstanding, l.currency)}</small>` : ""}</span></button>`).join("")
+        || `<div class="item empty">Aucun crédit en cours.</div>`}</div>
+      ${r && S.loans.some(l => l.outstanding > 0) ? `<p class="note">Comptés dans la zakat : ${money(r.loansSure)} · hors zakat jusqu'au remboursement : ${money(r.loansRisky)}.</p>` : ""}`;
+    $("accLoanHelp").onclick = () => helpSheet("loans");
+    $("p-comptes").querySelectorAll("[data-acc-loan]").forEach(b => (b.onclick = () => loanSheet(S.loans.find(l => l.id === b.dataset.accLoan))));
     $("p-comptes").querySelectorAll("[data-acc]").forEach(b => (b.onclick = () => accountSheet(S.accounts.find(a => a.id === b.dataset.acc))));
   }
 
@@ -510,11 +556,13 @@
     const alerts = active.filter(l => { const s = loanState(l); return s && (s[0] === "late" || s[0] === "soon"); });
     const cards = S.loans.map(l => {
       const st = loanState(l), repaid = l.initial - l.outstanding;
-      const hist = (l.repayments || []).map(p => `${dfr(p.date)} : ${money(p.cents, l.currency)} remboursés · zakat ${money(p.zakat, l.currency)}`).join("<br>");
+      const hist = (l.repayments || []).map(p => { const z = repayZakatOf(l, p);
+        return `${dfr(p.date)} : ${money(p.cents, l.currency)} remboursés${z.cents ? ` · zakat ${money(z.cents, l.currency)} (${z.years} an${z.years > 1 ? "s" : ""})` : ""}`; }).join("<br>");
       return `<div class="card loan">
         <div class="head"><span class="name">${esc(l.name)}</span>${st ? `<span class="pill ${st[0]}">${st[1]}</span>` : ""}</div>
+        <div style="margin-top:6px">${riskPill(l)}</div>
         <div class="meta">Prêté le ${dfr(l.date)} · ${money(l.initial, l.currency)}</div>
-        <div class="meta${(l.risk || 0) >= 50 ? " risk" : ""}">Remboursement prévu : ${l.due ? dfr(l.due) : "date inconnue"} · risque ${l.risk || 0} %</div>
+        <div class="meta${!loanSure(l) ? " risk" : ""}">Remboursement prévu : ${l.due ? dfr(l.due) : "date inconnue"} · risque ${l.risk || 0} %</div>
         <div class="bar"><i style="width:${l.initial ? Math.round(repaid / l.initial * 100) : 0}%"></i></div>
         <div class="foot"><b>Reste : ${money(l.outstanding, l.currency)}</b>
           <span>${l.outstanding > 0 ? `<button class="linkish" data-repay="${esc(l.id)}">Remboursement</button> · ` : ""}<button class="linkish" data-edit-loan="${esc(l.id)}">Modifier</button></span></div>
@@ -526,12 +574,15 @@
         <div class="top"><span class="lbl">Argent qu'on me doit</span></div>
         <div class="big">${r ? money(r.loansRef) : "…"}</div>
         <div class="line"><span>Crédits en cours</span><b>${active.length}</b></div>
-        <div class="line"><span>Montant à risque</span><b>${r ? money(r.atRisk) : "…"}</b></div>
+        <div class="line"><span>Compté dans la zakat (risque ≤ 20 %)</span><b>${r ? money(r.loansSure) : "…"}</b></div>
+        <div class="line"><span>Hors zakat jusqu'au remboursement</span><b>${r ? money(r.loansRisky) : "…"}</b></div>
+        <div class="line"><span>Montant que tu pourrais perdre</span><b>${r ? money(r.atRisk) : "…"}</b></div>
       </div>
       ${alerts.map(l => { const late = daysTo(l.due) < 0; return `<div class="alert${late ? " late" : ""}">🔔<span>${esc(l.name)} ${late ? "devait rembourser" : "doit rembourser"} le ${dfr(l.due)} (${money(l.outstanding, l.currency)}).</span></div>`; }).join("")}
-      <h2>Mes crédits accordés</h2>
+      <h2>Mes crédits accordés <button id="loanHelp">Comment ça compte ?</button></h2>
       ${cards}
-      <p class="note">École malikite : l'argent prêté ne compte pas chaque année dans la zakat. À chaque remboursement, l'appli ajoute la zakat d'une seule année (2,5 %).</p>`;
+      <p class="note">Risque de 0 à 20 % : le prêt est compté chaque année dans ta zakat. Au-delà de 20 % : il n'est pas compté, et la zakat de toute la période est ajoutée au remboursement.</p>`;
+    $("loanHelp").onclick = () => helpSheet("loans");
     $("p-credits").querySelectorAll("[data-repay]").forEach(b => (b.onclick = () => repaySheet(S.loans.find(l => l.id === b.dataset.repay))));
     $("p-credits").querySelectorAll("[data-edit-loan]").forEach(b => (b.onclick = () => loanSheet(S.loans.find(l => l.id === b.dataset.editLoan))));
   }
@@ -778,15 +829,15 @@
   function accountSheet(a) {
     const isNew = !a;
     const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", bank: "LCL", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
-    let op = "add"; // compte existant : ajouter ou remplacer
+    let op = "add", opTyped = null; // compte existant : ajouter, retirer ou remplacer
     const draw = () => {
       const metal = d.type === "gold" || d.type === "silver";
       const unit = metal ? "g" : d.currency;
       const opBox = isNew ? "" : `<label class="f">Modifier le ${metal ? "poids" : "solde"}</label>
-        <div class="chips"><button class="chip" data-op="add" aria-pressed="${op === "add"}">Ajouter</button><button class="chip" data-op="set" aria-pressed="${op === "set"}">Remplacer</button></div>
+        <div class="chips"><button class="chip" data-op="add" aria-pressed="${op === "add"}">＋ Ajouter</button><button class="chip" data-op="sub" aria-pressed="${op === "sub"}">− Retirer</button><button class="chip" data-op="set" aria-pressed="${op === "set"}">Remplacer</button></div>
         <div class="cur" style="margin:-4px 0 8px">${metal ? "Poids actuel" : "Solde actuel"} : <b>${metal ? String(a.grams).replace(".", ",") + " g" : money(a.cents, a.currency)}</b></div>
-        <label class="f" for="fOp">${op === "add" ? `Montant à ajouter (${unit}) · mets un « - » pour retirer` : `Nouveau ${metal ? "poids" : "solde"} (${unit})`}</label>
-        <input id="fOp" inputmode="decimal" placeholder="${op === "add" ? "+0,00" : "0,00"}" value="${op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
+        <label class="f" for="fOp">${op === "add" ? `Montant à ajouter (${unit})` : op === "sub" ? `Montant à retirer (${unit})` : `Nouveau ${metal ? "poids" : "solde"} (${unit})`}</label>
+        <input id="fOp" inputmode="decimal" placeholder="0,00" value="${opTyped != null ? esc(opTyped) : op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
         <div class="info ok" id="fPreview" hidden></div>`;
       openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
         <div class="cur">${isNew ? "Banque, espèces, or, argent ou crypto." : "Mets à jour le solde quand il change."}</div>
@@ -802,10 +853,15 @@
         : isNew ? `<label class="f" for="fAmt">Solde</label><div class="two"><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
           <select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>`
           : `<label class="f" for="fCur">Devise</label><select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select>`}
+        <button class="toggle" id="fNoZ" type="button" aria-pressed="${!!d.noZakat}" style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;width:100%;text-align:left;margin-bottom:6px">
+          <span style="flex:none;width:24px;height:24px;border-radius:7px;border:2px solid var(--accent);display:grid;place-items:center;background:${d.noZakat ? "var(--accent)" : "transparent"};color:var(--accent-fg);font-weight:900">${d.noZakat ? "✓" : ""}</span>
+          <span><b>Ne pas compter dans la zakat</b><small style="display:block;color:var(--muted);font-size:12.5px">Ex. compte de cotisations, argent qui n'est pas à toi</small></span></button>
+        <button class="linkish" id="fNoZHelp" type="button">Quand cocher cette case ?</button>
         <div class="row"><button class="btn primary" id="fSave">Enregistrer</button></div>
         ${isNew ? "" : `<div class="row"><button class="btn danger" id="fDel">Supprimer ce compte</button></div>`}`, isNew ? null : "fOp");
       const sh = $("sheet");
       const isMetal = () => d.type === "gold" || d.type === "silver";
+      const keepOp = () => { d.name = $("fName").value; if ($("fOp")) opTyped = $("fOp").value; if ($("fAmt")) d.cents = toCents($("fAmt").value) || 0; if ($("fGrams")) d.grams = parse($("fGrams").value) || 0; };
       const keep = () => { d.name = $("fName").value; if ($("fAmt")) d.cents = toCents($("fAmt").value) || 0; if ($("fGrams")) d.grams = parse($("fGrams").value) || 0; };
       bindChips(sh, "data-type", t => { keep(); d.type = t; if (t === "crypto") d.currency = S.settings.ref; draw(); });
       bindChips(sh, "data-usage", u => { d.usage = u; $("usageInfo").textContent = u === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."; });
@@ -813,24 +869,30 @@
       const opValue = () => {
         if (isNew || !$("fOp")) return null;
         const raw = $("fOp").value.trim().replace(/^−/, "-");
-        if (!raw) return op === "add" ? 0 : NaN;
-        if (isMetal()) { const g = parse(raw); if (!isFinite(g)) return NaN; return op === "add" ? Math.round(((a.grams || 0) + g) * 1000) / 1000 : g; }
-        const c = toCents(raw); if (isNaN(c)) return NaN; return op === "add" ? (a.cents || 0) + c : c;
+        if (!raw) return op === "set" ? NaN : null;
+        const sign = op === "sub" ? -1 : 1;
+        if (isMetal()) { const g = parse(raw); if (!isFinite(g)) return NaN; return op === "set" ? g : Math.round(((a.grams || 0) + sign * Math.abs(g)) * 1000) / 1000; }
+        const c = toCents(raw); if (isNaN(c)) return NaN; return op === "set" ? c : (a.cents || 0) + sign * Math.abs(c);
       };
       const preview = () => {
         const v = opValue(), el = $("fPreview"); if (!el) return;
-        if (v == null || isNaN(v) || op !== "add" || !$("fOp").value.trim()) { el.hidden = true; return; }
+        if (v == null || isNaN(v) || op === "set") { el.hidden = true; return; }
         el.hidden = false; el.innerHTML = `${isMetal() ? "Nouveau poids" : "Nouveau solde"} : <b>${isMetal() ? String(v).replace(".", ",") + " g" : money(v, a.currency)}</b>`;
       };
       if ($("fOp")) $("fOp").oninput = preview;
-      bindChips(sh, "data-op", v => { d.name = $("fName").value; op = v; draw(); });
+      preview();
+      $("fNoZ").onclick = () => { keepOp(); d.noZakat = !d.noZakat; draw(); };
+      $("fNoZHelp").onclick = () => helpSheet("exclude");
+      bindChips(sh, "data-op", v => { keepOp(); op = v; if (v === "set") opTyped = null; draw(); });
       $("fSave").onclick = async () => {
         keep();
         if (!isNew) {
           const v = opValue();
-          if (isNaN(v)) return toast("Montant invalide", true);
-          if (v < 0) return toast(isMetal() ? "Le poids ne peut pas être négatif" : "Le solde ne peut pas devenir négatif", true);
-          if (isMetal()) d.grams = v; else d.cents = v;
+          if (v != null) {
+            if (isNaN(v)) return toast("Montant invalide", true);
+            if (v < 0) return toast(isMetal() ? "Le poids ne peut pas être négatif" : "Le solde ne peut pas devenir négatif", true);
+            if (isMetal()) d.grams = v; else d.cents = v;
+          }
         }
         if (d.type === "cash") { d.bank = $("fBank").value; d.currency = $("fCur").value; }
         if (!isNew && d.currency !== a.currency && !confirm("Changer la devise ne convertit pas le montant : " + money(d.cents, a.currency) + " deviendra " + money(d.cents, d.currency) + ". Continuer ?")) return;
@@ -860,10 +922,14 @@
       <label class="f" for="lDate">Date du prêt</label><input id="lDate" type="date" class="small" value="${d.date}">
       <label class="f" for="lDue">Remboursement prévu (facultatif)</label><input id="lDue" type="date" class="small" value="${d.due || ""}">
       <label class="f" for="lRisk">Risque de non-remboursement : <span id="lRiskV">${d.risk || 0}</span> %</label>
-      <input id="lRisk" type="range" min="0" max="100" step="10" value="${d.risk || 0}">
+      <input id="lRisk" type="range" min="0" max="100" step="5" value="${d.risk || 0}">
+      <div class="info" id="lRiskInfo"></div>
+      <button class="linkish" id="lHelp" type="button">Comment le risque change la zakat ?</button>
       <div class="row"><button class="btn primary" id="lSave">Enregistrer</button></div>
       ${isNew ? "" : `<div class="row"><button class="btn danger" id="lDel">Supprimer ce prêt</button></div>`}`, isNew ? "lName" : null);
-    $("lRisk").oninput = () => ($("lRiskV").textContent = $("lRisk").value);
+    const riskUi = () => { const v = Number($("lRisk").value); $("lRiskV").textContent = v; const el = $("lRiskInfo"); el.className = "info" + (v <= RISK_MAX ? " ok" : ""); el.innerHTML = riskText(v); };
+    $("lRisk").oninput = riskUi; riskUi();
+    $("lHelp").onclick = () => helpSheet("loans");
     $("lSave").onclick = async () => {
       const amt = toCents($("lAmt").value);
       if (!(amt > 0)) return toast("Indique le montant prêté", true);
@@ -889,8 +955,9 @@
       cents = Math.min(cents, l.outstanding);
       const acc = targets.find(a => a.id === $("rAcc").value);
       if (acc && acc.currency !== l.currency && !market) return toast("Cours indisponibles : choisis « Aucun » ou un compte en " + l.currency, true);
-      const zakat = Z.zakatOnRepayment(cents);
-      const loan = Object.assign({}, l, { outstanding: l.outstanding - cents, repayments: [...(l.repayments || []), { date: $("rDate").value || todayIso(), cents, zakat, account: acc ? acc.id : null }] });
+      const rp = { date: $("rDate").value || todayIso(), cents, account: acc ? acc.id : null };
+      const z = repayZakatOf(l, rp);
+      const loan = Object.assign({}, l, { outstanding: l.outstanding - cents, repayments: [...(l.repayments || []), rp] });
       await put("loans", loan);
       if (acc) {
         const add = acc.currency === l.currency ? cents : Math.round(cents * Z.rateFor(market, l.currency) / Z.rateFor(market, acc.currency));
@@ -899,8 +966,12 @@
       }
       await loadAll(); renderAll();
       openSheet(`<h3>Zakat sur ce remboursement</h3>
-        <div class="info ok">Selon l'école malikite, un prêt remboursé donne lieu à la zakat d'une seule année : 2,5 % de ${money(cents, l.currency)}, soit <b>${money(zakat, l.currency)}</b>.</div>
-        <div class="cur">Ce montant est ajouté à ta zakat à verser, dans l'onglet Zakat.${acc ? ` ${esc(acc.name)} a été crédité.` : ""}</div>
+        ${loanSure(l)
+          ? `<div class="info ok">Ce prêt était sûr (risque ${l.risk || 0} %) : il était déjà compté chaque année dans ta zakat. <b>Rien de plus à payer</b>.</div>`
+          : z.years ? `<div class="info ok">Ce prêt était douteux (risque ${l.risk || 0} %) : il n'était pas compté. Il a duré ${z.years} année${z.years > 1 ? "s" : ""} lunaire${z.years > 1 ? "s" : ""} complète${z.years > 1 ? "s" : ""}, donc ${z.years} × 2,5 % de ${money(cents, l.currency)} = <b>${money(z.cents, l.currency)}</b> de zakat.</div>
+            <div class="cur">Ce montant est ajouté à ta zakat à verser, dans l'onglet Zakat.</div>`
+          : `<div class="info ok">Le prêt a duré moins d'une année lunaire : pas de zakat à ajouter pour la période du prêt. L'argent remboursé rejoint simplement ton compte.</div>`}
+        <div class="cur">${acc ? `${esc(acc.name)} a été crédité de ce remboursement.` : ""}</div>
         <div class="row"><button class="btn primary" id="okBtn">Compris</button></div>`);
       $("okBtn").onclick = closeSheet;
     };
@@ -995,7 +1066,7 @@
         <span>Statut</span><span>${r.reached ? "Atteint" : "Non atteint"}</span>
         <span class="tot">Zakat estimée (2,5 %)</span><span class="tot">${money(r.dueCents)}</span></div>
       ${ex ? `<div class="cur"><b>Non comptés :</b><ul style="margin:6px 0 0;padding-left:18px">${ex}</ul></div>` : ""}
-      <div class="cur">Ce calcul suit les règles de l'école malikite telles que nous les avons comprises ; en cas de doute, demande l'avis d'un savant.</div>`);
+      <div class="cur">Crédits : risque de 0 à 20 % compté chaque année, au-delà compté au remboursement pour toute la période. Le reste suit l'école malikite telle que nous l'avons comprise ; en cas de doute, demande l'avis d'un savant.</div>`);
   }
 
   function settingsSheet() {

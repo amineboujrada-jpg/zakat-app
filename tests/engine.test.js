@@ -61,3 +61,21 @@ test("18. Wallet : la dette réduit les tranches à venir", () => {
   const r = Z.computeLots([{ date: "2025-01-01", cents: 1000000 }], { today: "2025-02-01", hawlEnd: end, debtCents: 200000 });
   assert.equal(r.lots[0].cents, 800000); assert.equal(r.lots[0].zakat, 20000);
 });
+
+test("19. Prêt sûr (risque ≤ 20 %) compté chaque année", () => {
+  const r = run([cash(10000), { id: "p", name: "Prêt", type: "loan", cents: 500000, countYearly: true }]);
+  assert.equal(r.baseCents, 1500000); assert.equal(r.dueCents, 37500);
+});
+test("20. Compte exclu de la zakat", () => {
+  const r = run([cash(10000), { id: "x", name: "Cotisations", type: "cash", cents: 500000, noZakat: true }]);
+  assert.equal(r.baseCents, 1000000); assert.equal(r.excluded.length, 1);
+});
+test("21. Prêt à risque : zakat de toute la période au remboursement", () => {
+  const z = Z.zakatForPeriod(100000, "2023-01-01", "2025-12-31", end);
+  assert.equal(z.years, 3); assert.equal(z.cents, 7500);
+  assert.equal(Z.zakatForPeriod(100000, "2025-01-01", "2025-06-01", end).years, 0);
+});
+test("22. Mouvements du même jour additionnés", () => {
+  const mv = [{ date: "2025-01-01", cents: 1000000 }, { date: "2025-02-01", cents: -100000 }, { date: "2025-02-01", cents: 100000 }];
+  assert.equal(Z.computeLots(mv, { today: end("2025-01-01"), hawlEnd: end }).dueCents, 25000);
+});

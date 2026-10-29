@@ -30,11 +30,13 @@
 
   function exclusion(a, settings) {
     const madhhab = settings.madhhab || "maliki";
+    if (a.noZakat) return { reason: "Exclu du calcul à ta demande.", remind: false };
+    if (a.type === "loan" && a.countYearly) return null; // prêt sûr : compté chaque année comme de l'argent sur un compte
     if (a.type === "gold" && a.usage === "worn" && madhhab !== "hanafi")
       return { reason: "Bijou porté habituellement : non soumis.", remind: false };
     if (a.type === "loan") {
       if (madhhab === "maliki")
-        return { reason: "Prêt : zakat d'une seule année, payée au remboursement.", remind: true };
+        return { reason: "Prêt à risque : pas compté jusqu'au remboursement.", remind: true };
       if (!a.secure)
         return { reason: "Remboursement non sûr : exclu jusqu'au remboursement.", remind: true };
     }
@@ -99,7 +101,10 @@
   // Si le total passe sous le nisab, toutes les tranches repartent à zéro (école malikite).
   function computeLots(movements, opts) {
     const hawlEnd = opts.hawlEnd, today = opts.today;
-    const ev = movements.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    // Mouvements du même jour additionnés (ex. 1 000 € qui quittent un compte et deviennent un prêt sûr)
+    const byDay = new Map();
+    movements.forEach(m => { const o = byDay.get(m.date) || { date: m.date, cents: 0, nisab: 0 }; o.cents += m.cents; if (m.nisab) o.nisab = m.nisab; byDay.set(m.date, o); });
+    const ev = [...byDay.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     let lots = [], total = 0, broken = false, brokenSince = null;
     const due = [];
     const mature = upto => {
@@ -139,10 +144,17 @@
     };
   }
 
+  // Prêt à risque remboursé : zakat de toutes les années lunaires complètes écoulées (2,5 % par année)
+  function zakatForPeriod(cents, from, to, hawlEnd) {
+    let years = 0, d = from;
+    for (let i = 0; i < 100; i++) { const e = hawlEnd(d); if (e > to) break; years++; d = e; }
+    return { years, cents: years * applyRate(cents) };
+  }
+
   // Zakat d'une seule année sur un prêt remboursé (malikite)
   const zakatOnRepayment = cents => applyRate(cents);
 
-  const api = { calculate, computeLots, zakatOnRepayment, applyRate, pureGrams, rateFor, nisabCents, GOLD_NISAB_G, SILVER_NISAB_G };
+  const api = { calculate, computeLots, zakatForPeriod, zakatOnRepayment, applyRate, pureGrams, rateFor, nisabCents, GOLD_NISAB_G, SILVER_NISAB_G };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.ZakatEngine = api;
 })(typeof self !== "undefined" ? self : this);
