@@ -118,6 +118,12 @@
   .chip { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 8px 15px; font-size: 15px; font-weight: 600; }
   .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .row { display: flex; gap: 8px; margin-top: 4px; }
+  .opfield { display: flex; gap: 6px; align-items: stretch; margin-bottom: 12px; }
+  .opfield input { margin: 0 !important; flex: 1; min-width: 0; }
+  .opbtn { flex: none; width: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+    display: grid; place-items: center; padding: 0; }
+  .opbtn svg { width: 20px; height: 20px; }
+  .opbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .btn { flex: 1; border: 0; border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 700; }
   .btn.primary { background: var(--accent); color: var(--accent-fg); }
   .btn.ghost { background: var(--surface-2); border: 1px solid var(--line); }
@@ -716,8 +722,12 @@
     openSheet(`<h3>${esc(m.label || "Mouvement")}</h3>
       <div class="cur">${isInit ? "Ta première tranche : l'argent présent au début du suivi." : "La date compte pour le hawl de cette somme."}</div>
       <label class="f" for="mDate">Date</label><input id="mDate" type="date" class="small" value="${m.date}">
-      ${isInit ? "" : `<div class="chips"><button class="chip" data-sign="1" aria-pressed="${m.cents >= 0}">＋ Hausse</button><button class="chip" data-sign="-1" aria-pressed="${m.cents < 0}">− Baisse</button></div>`}
-      <label class="f" for="mAmt">Montant (${m.ref})</label><input id="mAmt" inputmode="decimal" value="${(Math.abs(m.cents) / 100).toFixed(2).replace(".", ",")}">
+      <label class="f" for="mAmt">Montant (${m.ref})${isInit ? "" : " · hausse ou baisse"}</label>
+      <div class="opfield">
+        ${isInit ? "" : `<button class="opbtn" type="button" data-sign="1" aria-pressed="${m.cents >= 0}" aria-label="Hausse">${OPI.add}</button>
+        <button class="opbtn" type="button" data-sign="-1" aria-pressed="${m.cents < 0}" aria-label="Baisse">${OPI.sub}</button>`}
+        <input id="mAmt" inputmode="decimal" value="${(Math.abs(m.cents) / 100).toFixed(2).replace(".", ",")}">
+      </div>
       <div class="row"><button class="btn primary" id="mSave">Enregistrer</button></div>
       ${isInit ? "" : `<div class="row"><button class="btn danger" id="mDel">Supprimer ce mouvement</button></div>`}`);
     let sign = m.cents < 0 ? -1 : 1;
@@ -829,6 +839,11 @@
   }
 
   // ================= FORMULAIRES =================
+  const OPI = {
+    add: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+    sub: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>`,
+    set: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`
+  };
   function accountSheet(a) {
     const isNew = !a;
     const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", bank: "LCL", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
@@ -837,10 +852,13 @@
       const metal = d.type === "gold" || d.type === "silver";
       const unit = metal ? "g" : d.currency;
       const opBox = isNew ? "" : `<label class="f">Modifier le ${metal ? "poids" : "solde"}</label>
-        <div class="chips"><button class="chip" data-op="add" aria-pressed="${op === "add"}">＋ Ajouter</button><button class="chip" data-op="sub" aria-pressed="${op === "sub"}">− Retirer</button><button class="chip" data-op="set" aria-pressed="${op === "set"}">Remplacer</button></div>
-        <div class="cur" style="margin:-4px 0 8px">${metal ? "Poids actuel" : "Solde actuel"} : <b>${metal ? String(a.grams).replace(".", ",") + " g" : money(a.cents, a.currency)}</b></div>
-        <label class="f" for="fOp">${op === "add" ? `Montant à ajouter (${unit})` : op === "sub" ? `Montant à retirer (${unit})` : `Nouveau ${metal ? "poids" : "solde"} (${unit})`}</label>
-        <input id="fOp" inputmode="decimal" placeholder="0,00" value="${opTyped != null ? esc(opTyped) : op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
+        <div class="cur" style="margin:-2px 0 8px">${metal ? "Poids actuel" : "Solde actuel"} : <b>${metal ? String(a.grams).replace(".", ",") + " g" : money(a.cents, a.currency)}</b> · ${op === "add" ? `ajouter (${unit})` : op === "sub" ? `retirer (${unit})` : `nouveau ${metal ? "poids" : "solde"} (${unit})`}</div>
+        <div class="opfield">
+          <button class="opbtn" type="button" data-op="add" aria-pressed="${op === "add"}" aria-label="Ajouter">${OPI.add}</button>
+          <button class="opbtn" type="button" data-op="sub" aria-pressed="${op === "sub"}" aria-label="Retirer">${OPI.sub}</button>
+          <button class="opbtn" type="button" data-op="set" aria-pressed="${op === "set"}" aria-label="Remplacer le ${metal ? "poids" : "solde"}">${OPI.set}</button>
+          <input id="fOp" inputmode="decimal" aria-label="Montant" placeholder="0,00" value="${opTyped != null ? esc(opTyped) : op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
+        </div>
         <div class="info ok" id="fPreview" hidden></div>`;
       openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
         <div class="cur">${isNew ? "Banque, espèces, or, argent ou crypto." : "Mets à jour le solde quand il change."}</div>
@@ -886,7 +904,7 @@
       preview();
       $("fNoZ").onclick = () => { keepOp(); d.noZakat = !d.noZakat; draw(); };
       $("fNoZHelp").onclick = () => helpSheet("exclude");
-      bindChips(sh, "data-op", v => { keepOp(); op = v; if (v === "set") opTyped = null; draw(); });
+      bindChips(sh, "data-op", v => { keepOp(); op = v; if (v === "set") opTyped = null; draw(); setTimeout(() => { const el = $("fOp"); if (el) el.focus(); }, 50); });
       $("fSave").onclick = async () => {
         keep();
         if (!isNew) {
