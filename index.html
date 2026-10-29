@@ -145,6 +145,13 @@
   .auth .or::before, .auth .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .auth .msg { border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; line-height: 1.4; background: var(--surface-2); }
   .auth .msg.err { background: var(--danger-bg); color: var(--danger); }
+  .lock { position: fixed; inset: 0; z-index: 18; background: var(--bg); display: grid; place-items: center; padding: 24px; text-align: center; }
+  .lock .box { max-width: 340px; width: 100%; }
+  .lock img { width: 72px; height: 72px; border-radius: 18px; margin-bottom: 16px; }
+  .lock h2 { display: block; font-size: 22px; margin: 0 0 6px; }
+  .lock p { color: var(--muted); margin: 0 0 22px; line-height: 1.45; }
+  .lock .btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .lock .alt { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 14px 0 0; }
   .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -160%);
     background: var(--accent); color: var(--accent-fg); padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 14px; z-index: 20;
     transition: transform .2s; max-width: calc(100% - 32px); }
@@ -207,6 +214,18 @@
       <button class="btn primary" id="aSubmit" type="submit">Se connecter</button>
     </form>
     <div class="alt"><button id="aSwitch" type="button">Créer un compte</button><button id="aForgot" type="button">Mot de passe oublié ?</button></div>
+  </div>
+</div>
+
+<div class="lock" id="lock" hidden>
+  <div class="box">
+    <img src="icon-192.png" alt="">
+    <h2>Zakat est verrouillée</h2>
+    <p>Utilise Face ID pour ouvrir l'appli.</p>
+    <button class="btn primary" id="unlockBtn" type="button">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1.5M15 9v1.5M12 9v4.5h-1"/><path d="M9.5 16a3.5 3.5 0 0 0 5 0"/></svg>
+      Déverrouiller avec Face ID</button>
+    <button class="alt" id="unlockPass" type="button">Utiliser mon mot de passe</button>
   </div>
 </div>
 
@@ -759,30 +778,62 @@
   function accountSheet(a) {
     const isNew = !a;
     const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", bank: "LCL", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
+    let op = "add"; // compte existant : ajouter ou remplacer
     const draw = () => {
       const metal = d.type === "gold" || d.type === "silver";
+      const unit = metal ? "g" : d.currency;
+      const opBox = isNew ? "" : `<label class="f">Modifier le ${metal ? "poids" : "solde"}</label>
+        <div class="chips"><button class="chip" data-op="add" aria-pressed="${op === "add"}">Ajouter</button><button class="chip" data-op="set" aria-pressed="${op === "set"}">Remplacer</button></div>
+        <div class="cur" style="margin:-4px 0 8px">${metal ? "Poids actuel" : "Solde actuel"} : <b>${metal ? String(a.grams).replace(".", ",") + " g" : money(a.cents, a.currency)}</b></div>
+        <label class="f" for="fOp">${op === "add" ? `Montant à ajouter (${unit}) · mets un « - » pour retirer` : `Nouveau ${metal ? "poids" : "solde"} (${unit})`}</label>
+        <input id="fOp" inputmode="decimal" placeholder="${op === "add" ? "+0,00" : "0,00"}" value="${op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
+        <div class="info ok" id="fPreview" hidden></div>`;
       openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
         <div class="cur">${isNew ? "Banque, espèces, or, argent ou crypto." : "Mets à jour le solde quand il change."}</div>
         ${isNew ? `<div class="chips">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${d.type === k}">${t}</button>`).join("")}</div>` : ""}
         ${d.type === "cash" ? `<label class="f" for="fBank">Banque</label><select id="fBank">${Object.keys(BANKS).map(b => `<option${b === d.bank ? " selected" : ""}>${b}</option>`).join("")}</select>` : ""}
         <label class="f" for="fName">Nom${d.type === "cash" ? " (facultatif, ex. LCL Épargne)" : ""}</label>
         <input id="fName" class="small" value="${esc(d.name)}" autocomplete="off">
-        ${metal ? `<label class="f" for="fGrams">Poids (g)</label><input id="fGrams" inputmode="decimal" value="${d.grams ? String(d.grams).replace(".", ",") : ""}">
+        ${opBox}
+        ${metal ? `${isNew ? `<label class="f" for="fGrams">Poids (g)</label><input id="fGrams" inputmode="decimal" value="${d.grams ? String(d.grams).replace(".", ",") : ""}">` : ""}
           ${d.type === "gold" ? `<label class="f" for="fCarats">Carats</label><select id="fCarats">${[24, 22, 21, 18].map(c => `<option value="${c}"${c === d.carats ? " selected" : ""}>${c} carats</option>`).join("")}</select>
           <label class="f">Usage</label><div class="chips"><button class="chip" data-usage="savings" aria-pressed="${d.usage !== "worn"}">Épargne</button><button class="chip" data-usage="worn" aria-pressed="${d.usage === "worn"}">Porté</button></div>
           <div class="info" id="usageInfo">${d.usage === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."}</div>` : ""}`
-        : `<label class="f" for="fAmt">Solde</label><div class="two"><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
-          <select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>`}
+        : isNew ? `<label class="f" for="fAmt">Solde</label><div class="two"><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
+          <select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>`
+          : `<label class="f" for="fCur">Devise</label><select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select>`}
         <div class="row"><button class="btn primary" id="fSave">Enregistrer</button></div>
-        ${isNew ? "" : `<div class="row"><button class="btn danger" id="fDel">Supprimer ce compte</button></div>`}`, isNew ? null : (metal ? "fGrams" : "fAmt"));
+        ${isNew ? "" : `<div class="row"><button class="btn danger" id="fDel">Supprimer ce compte</button></div>`}`, isNew ? null : "fOp");
       const sh = $("sheet");
+      const isMetal = () => d.type === "gold" || d.type === "silver";
       const keep = () => { d.name = $("fName").value; if ($("fAmt")) d.cents = toCents($("fAmt").value) || 0; if ($("fGrams")) d.grams = parse($("fGrams").value) || 0; };
       bindChips(sh, "data-type", t => { keep(); d.type = t; if (t === "crypto") d.currency = S.settings.ref; draw(); });
       bindChips(sh, "data-usage", u => { d.usage = u; $("usageInfo").textContent = u === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."; });
-      if ($("fBank")) $("fBank").onchange = () => { d.bank = $("fBank").value; $("fCur").value = BANKS[d.bank][0]; };
+      if ($("fBank")) $("fBank").onchange = () => { d.bank = $("fBank").value; if (isNew) $("fCur").value = BANKS[d.bank][0]; };
+      const opValue = () => {
+        if (isNew || !$("fOp")) return null;
+        const raw = $("fOp").value.trim().replace(/^−/, "-");
+        if (!raw) return op === "add" ? 0 : NaN;
+        if (isMetal()) { const g = parse(raw); if (!isFinite(g)) return NaN; return op === "add" ? Math.round(((a.grams || 0) + g) * 1000) / 1000 : g; }
+        const c = toCents(raw); if (isNaN(c)) return NaN; return op === "add" ? (a.cents || 0) + c : c;
+      };
+      const preview = () => {
+        const v = opValue(), el = $("fPreview"); if (!el) return;
+        if (v == null || isNaN(v) || op !== "add" || !$("fOp").value.trim()) { el.hidden = true; return; }
+        el.hidden = false; el.innerHTML = `${isMetal() ? "Nouveau poids" : "Nouveau solde"} : <b>${isMetal() ? String(v).replace(".", ",") + " g" : money(v, a.currency)}</b>`;
+      };
+      if ($("fOp")) $("fOp").oninput = preview;
+      bindChips(sh, "data-op", v => { d.name = $("fName").value; op = v; draw(); });
       $("fSave").onclick = async () => {
         keep();
+        if (!isNew) {
+          const v = opValue();
+          if (isNaN(v)) return toast("Montant invalide", true);
+          if (v < 0) return toast(isMetal() ? "Le poids ne peut pas être négatif" : "Le solde ne peut pas devenir négatif", true);
+          if (isMetal()) d.grams = v; else d.cents = v;
+        }
         if (d.type === "cash") { d.bank = $("fBank").value; d.currency = $("fCur").value; }
+        if (!isNew && d.currency !== a.currency && !confirm("Changer la devise ne convertit pas le montant : " + money(d.cents, a.currency) + " deviendra " + money(d.cents, d.currency) + ". Continuer ?")) return;
         if (d.type === "crypto") d.currency = $("fCur").value;
         if (d.type === "gold") d.carats = Number($("fCarats").value);
         if (d.type === "gold" || d.type === "silver") { if (!(d.grams > 0)) return toast("Indique le poids en grammes", true); d.cents = 0; }
@@ -957,6 +1008,7 @@
       <label class="f" for="stNisab">Nisab de référence</label><select id="stNisab"><option value="gold"${st.nisabRef !== "silver" ? " selected" : ""}>Or : 85 g</option><option value="silver"${st.nisabRef === "silver" ? " selected" : ""}>Argent : 595 g</option></select>
       <div class="stack">
         ${s && passkey.supported() ? `<button class="btn ghost" id="pkAdd">${passkey.known() ? "Face ID activé ✓ · ajouter cet appareil" : "Activer la connexion Face ID"}</button>` : ""}
+        ${s && passkey.supported() ? `<button class="toggle" id="lockTgl" aria-pressed="${appLock.enabled()}" type="button" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-weight:600;width:100%"><span style="text-align:left">Face ID à chaque ouverture<small style="display:block;color:var(--muted);font-weight:500;font-size:12.5px">Verrouille l'appli quand tu la quittes plus de 30 s</small></span><span style="font-weight:800;color:${appLock.enabled() ? "var(--ok)" : "var(--muted)"}">${appLock.enabled() ? "Activé" : "Désactivé"}</span></button>` : ""}
         ${s ? `<button class="btn ghost" id="syncNow">Synchroniser maintenant</button>` : ""}
         <button class="btn ghost" id="exportBtn">Exporter une sauvegarde</button>
         ${s ? `<button class="btn danger" id="logout">Se déconnecter</button>` : ""}
@@ -966,6 +1018,13 @@
     $("stMode").onclick = () => modeSheet();
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
     if ($("pkAdd")) $("pkAdd").onclick = () => passkey.register();
+    if ($("lockTgl")) $("lockTgl").onclick = async () => {
+      if (appLock.enabled()) { appLock.set(false); settingsSheet(); toast("Verrouillage Face ID désactivé"); return; }
+      if (!passkey.known()) { toast("Active d'abord la connexion Face ID", true); return; }
+      try { if (!(await appLock.verify())) return toast("Face ID non vérifié", true); }
+      catch (e) { return toast(passkey.err(e), true); }
+      appLock.set(true); settingsSheet(); toast("Face ID sera demandé à chaque ouverture");
+    };
     if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);
     if ($("logout")) $("logout").onclick = async () => { if (!confirm("Se déconnecter ? Les données de cet appareil seront effacées (elles restent sur ton compte).")) return; closeSheet(); await cloud.signOut(); };
     $("exportBtn").onclick = () => {
@@ -1231,7 +1290,7 @@
       clearInterval(cloud.poll); clearTimeout(cloud.timer);
       cloud.session = null; ls.set(LS_KEY, null); await setMeta("session", undefined);
       await cloud.wipeLocal();
-      renderAll(); cloud.showAuth("login", "Tu es déconnecté.");
+      $("lock").hidden = true; renderAll(); cloud.showAuth("login", "Tu es déconnecté.");
     },
     showAuth(mode, msg, isErr) {
       cloud.mode = mode;
@@ -1286,6 +1345,42 @@
     }
   };
 
+
+  // ================= VERROUILLAGE FACE ID À CHAQUE OUVERTURE =================
+  // Utilise la clé d'accès (passkey) déjà créée pour la connexion Face ID : la vérification se fait
+  // sur l'iPhone (Face ID), sans internet. Réglage propre à chaque appareil.
+  const LOCK_KEY = "zakat.lock", LOCK_AFTER_MS = 30000;
+  const appLock = {
+    enabled() { try { return localStorage.getItem(LOCK_KEY) === "1"; } catch (_) { return false; } },
+    set(v) { try { if (v) localStorage.setItem(LOCK_KEY, "1"); else localStorage.removeItem(LOCK_KEY); } catch (_) {} },
+    hiddenAt: 0, busy: false,
+    show() {
+      if (!appLock.enabled() || !CLOUD || !cloud.session) return;
+      $("lock").hidden = false; closeSheet();
+      setTimeout(() => appLock.unlock(true), 350);
+    },
+    async verify() {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const cred = await navigator.credentials.get({ publicKey: { challenge, rpId: location.hostname, userVerification: "required", timeout: 60000 } });
+      const ad = new Uint8Array(cred.response.authenticatorData);
+      return ad.length > 32 && (ad[32] & 0x04) === 0x04; // l'utilisateur a bien été vérifié (Face ID / code)
+    },
+    async unlock(auto) {
+      if (appLock.busy) return; appLock.busy = true;
+      try {
+        if (await appLock.verify()) { $("lock").hidden = true; renderAll(); }
+        else toast("Face ID non vérifié", true);
+      } catch (e) { if (!auto) toast(passkey.err(e), true); }
+      finally { appLock.busy = false; }
+    }
+  };
+  $("unlockBtn").onclick = () => appLock.unlock(false);
+  $("unlockPass").onclick = () => { $("lock").hidden = true; cloud.showAuth("login", "Entre ton mot de passe pour ouvrir l'appli."); if (cloud.session) $("aEmail").value = cloud.session.user.email || ""; };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") appLock.hiddenAt = Date.now();
+    else if (appLock.hiddenAt && Date.now() - appLock.hiddenAt >= LOCK_AFTER_MS) appLock.show();
+  });
+
   function updateStatus() {
     $("status").textContent = CLOUD ? (cloud.session ? cloud.statusText() : "Non connecté") : "Mode local · données sur cet appareil";
   }
@@ -1297,7 +1392,7 @@
     try { const t = localStorage.getItem("zakat.tab"); if (t && FAB[t]) setTab(t); } catch (_) {}
     market = S.meta["market_" + S.settings.ref] || null;
     renderAll();
-    if (CLOUD) await cloud.start();
+    if (CLOUD) { await cloud.start(); if (cloud.session && $("auth").hidden) appLock.show(); }
     loadMarket();
     window.addEventListener("online", () => { updateStatus(); loadMarket(); if (CLOUD) cloud.syncNow(true); });
     window.addEventListener("offline", updateStatus);
