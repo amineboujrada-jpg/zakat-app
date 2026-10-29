@@ -742,9 +742,9 @@
       <label class="f" for="mDate">Date</label><input id="mDate" type="date" class="small" value="${m.date}">
       <label class="f" for="mAmt">Montant (${m.ref})${isInit ? "" : " · hausse ou baisse"}</label>
       <div class="opfield">
+        <input id="mAmt" inputmode="decimal" value="${(Math.abs(m.cents) / 100).toFixed(2).replace(".", ",")}">
         ${isInit ? "" : `<button class="opbtn" type="button" data-sign="1" aria-pressed="${m.cents >= 0}" aria-label="Hausse">${OPI.add}</button>
         <button class="opbtn" type="button" data-sign="-1" aria-pressed="${m.cents < 0}" aria-label="Baisse">${OPI.sub}</button>`}
-        <input id="mAmt" inputmode="decimal" value="${(Math.abs(m.cents) / 100).toFixed(2).replace(".", ",")}">
       </div>
       <div class="row"><button class="btn primary" id="mSave">Enregistrer</button></div>
       ${isInit ? "" : `<div class="row"><button class="btn danger" id="mDel">Supprimer ce mouvement</button></div>`}`);
@@ -872,10 +872,10 @@
       const opBox = isNew ? "" : `<label class="f">Modifier le ${metal ? "poids" : "solde"}</label>
         <div class="cur" style="margin:-2px 0 8px">${metal ? "Poids actuel" : "Solde actuel"} : <b>${metal ? String(a.grams).replace(".", ",") + " g" : money(a.cents, a.currency)}</b> · ${op === "add" ? `ajouter (${unit})` : op === "sub" ? `retirer (${unit})` : `nouveau ${metal ? "poids" : "solde"} (${unit})`}</div>
         <div class="opfield">
+          <input id="fOp" inputmode="decimal" aria-label="Montant" placeholder="0,00" value="${opTyped != null ? esc(opTyped) : op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
           <button class="opbtn" type="button" data-op="add" aria-pressed="${op === "add"}" aria-label="Ajouter">${OPI.add}</button>
           <button class="opbtn" type="button" data-op="sub" aria-pressed="${op === "sub"}" aria-label="Retirer">${OPI.sub}</button>
           <button class="opbtn" type="button" data-op="set" aria-pressed="${op === "set"}" aria-label="Remplacer le ${metal ? "poids" : "solde"}">${OPI.set}</button>
-          <input id="fOp" inputmode="decimal" aria-label="Montant" placeholder="0,00" value="${opTyped != null ? esc(opTyped) : op === "set" ? (metal ? String(a.grams).replace(".", ",") : inputVal(a.cents)) : ""}">
         </div>
         <div class="info ok" id="fPreview" hidden></div>`;
       openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
