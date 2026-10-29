@@ -3,7 +3,7 @@
 
 create table if not exists public.zakat_entries (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  store text not null check (store in ('accounts','loans','payments','debts','settings','years','snapshots')),
+  store text not null check (store in ('accounts','loans','payments','debts','settings','years','snapshots','movements')),
   id text not null,
   data jsonb not null default '{}'::jsonb,
   deleted boolean not null default false,          -- suppression gardée pour prévenir les autres appareils

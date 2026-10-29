@@ -220,8 +220,8 @@
   const CLOUD = !!(CFG.supabaseUrl && CFG.supabaseKey);
 
   // ================= BASE DE DONNÉES (IndexedDB, dans le téléphone) =================
-  const DB_NAME = "zakat-app", DB_VER = 2;
-  const DATA_STORES = ["accounts", "loans", "payments", "debts", "settings", "years", "snapshots"];
+  const DB_NAME = "zakat-app", DB_VER = 3;
+  const DATA_STORES = ["accounts", "loans", "payments", "debts", "settings", "years", "snapshots", "movements"];
   let idb = null;
   function openDb() {
     return new Promise((res, rej) => {
@@ -249,10 +249,11 @@
   async function setMeta(k, v) { S.meta[k] = v; await tx("meta", "readwrite", s => (v === undefined ? s.delete(k) : s.put({ k, v }))); }
 
   // État en mémoire (copie de la base)
-  const DEFAULT_SETTINGS = { id: "main", ref: "EUR", nisabRef: "gold", surplusCents: 0, surplusCur: "EUR", hawlStart: null, hawlEvents: [] };
-  const S = { accounts: [], loans: [], payments: [], debts: [], years: [], snapshots: [], settings: Object.assign({}, DEFAULT_SETTINGS), meta: {} };
+  const DEFAULT_SETTINGS = { id: "main", ref: "EUR", nisabRef: "gold", surplusCents: 0, surplusCur: "EUR", hawlStart: null, hawlEvents: [], mode: "yearly", lotsStart: null };
+  const S = { accounts: [], loans: [], payments: [], debts: [], years: [], snapshots: [], movements: [], settings: Object.assign({}, DEFAULT_SETTINGS), meta: {} };
   async function loadAll() {
-    const [accounts, loans, payments, debts, settings, meta, years, snapshots] = await Promise.all(["accounts", "loans", "payments", "debts", "settings", "meta", "years", "snapshots"].map(getAll));
+    const [accounts, loans, payments, debts, settings, meta, years, snapshots, movements] = await Promise.all(["accounts", "loans", "payments", "debts", "settings", "meta", "years", "snapshots", "movements"].map(getAll));
+    S.movements = movements.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.created || "") < (b.created || "") ? -1 : 1));
     S.years = years.sort((a, b) => (a.start < b.start ? -1 : 1));
     S.snapshots = snapshots.sort((a, b) => (a.id < b.id ? -1 : 1));
     const byDate = (a, b) => (a.created || "") < (b.created || "") ? -1 : 1;
@@ -366,6 +367,31 @@
   const rate = cur => market ? Z.rateFor(market, cur) : (cur === S.settings.ref ? 1 : null);
   const toRef = (cents, cur) => { const r = rate(cur); return r == null ? null : Math.round(cents * r); };
 
+  // ---------- Mouvements (wallet de zakat) ----------
+  // Valeur soumise d'un compte, en devise de référence (bijou porté = 0)
+  function valueRef(a) {
+    if (!a) return 0;
+    if (a.type === "gold") return a.usage === "worn" || !market ? 0 : Math.round(Z.pureGrams(a) * market.goldCents);
+    if (a.type === "silver") return market ? Math.round(Z.pureGrams(a) * market.silverCents) : 0;
+    return toRef(a.cents || 0, a.currency) || 0;
+  }
+  const walletMode = () => S.settings.mode === "lots";
+  const nisabToday = () => market ? Z.nisabCents(market, S.settings.nisabRef) : 0;
+  async function recordMove(date, cents, label) {
+    if (!walletMode() || !cents || !isFinite(cents)) return;
+    await put("movements", { id: uid(), date, cents: Math.round(cents), ref: S.settings.ref, nisab: nisabToday(), label, created: new Date().toISOString() });
+  }
+  // Première tranche : l'argent présent au début du suivi
+  async function ensureInit() {
+    if (!walletMode() || !market || !S.settings.lotsStart) return false;
+    const cur = S.movements.find(m => m.id === "init");
+    if (cur && cur.date === S.settings.lotsStart) return false;
+    const total = cur ? cur.cents : S.accounts.reduce((t, a) => t + valueRef(a), 0);
+    await put("movements", { id: "init", date: S.settings.lotsStart, cents: total, ref: cur ? cur.ref : S.settings.ref, nisab: nisabToday(), label: "Argent de départ", created: "0" });
+    await loadAll(); return true;
+  }
+  const moveRef = m => m.ref === S.settings.ref ? m.cents : (toRef(m.cents, m.ref) || 0);
+
   // ================= CALCUL =================
   const loanAssets = () => S.loans.filter(l => l.outstanding > 0)
     .map(l => ({ id: l.id, name: "Prêt à " + l.name, type: "loan", cents: l.outstanding, currency: l.currency, secure: (l.risk || 0) === 0 }));
@@ -380,8 +406,12 @@
     r.repayItems = [];
     S.loans.forEach(l => (l.repayments || []).forEach(p => r.repayItems.push({ date: p.date, label: "Remboursement de " + l.name, cents: toRef(p.zakat, l.currency) || 0 })));
     r.repayZakat = r.repayItems.reduce((s, x) => s + x.cents, 0);
+    if (walletMode()) {
+      r.wallet = Z.computeLots(S.movements.map(m => ({ date: m.date, cents: moveRef(m), nisab: m.nisab ? (m.ref === S.settings.ref ? m.nisab : toRef(m.nisab, m.ref)) : 0 })),
+        { today: todayIso(), hawlEnd, debtCents: r.deductibleCents });
+    }
     r.yearsDue = S.years.reduce((s, y) => s + (toRef(y.dueCents, y.ref) || 0), 0);
-    r.totalDue = r.yearsDue + r.repayZakat;
+    r.totalDue = r.yearsDue + r.repayZakat + (r.wallet ? r.wallet.dueCents : 0);
     r.paid = S.payments.reduce((s, p) => s + (toRef(p.cents, p.currency) || 0), 0);
     r.remaining = Math.max(0, r.totalDue - r.paid);
     r.loansRef = S.loans.reduce((s, l) => s + (toRef(l.outstanding, l.currency) || 0), 0);
@@ -549,6 +579,110 @@
     if ($("closeYear")) $("closeYear").onclick = () => closeYearSheet(r);
   }
 
+  // ---------- Écran « Wallet de zakat » : chaque somme a son propre hawl ----------
+  function renderWallet(r) {
+    const st = S.settings, w = r && r.wallet;
+    const nisabLbl = st.nisabRef === "silver" ? "595 g d'argent" : "85 g d'or";
+    if (!st.lotsStart) {
+      $("p-zakat").innerHTML = `<div class="card"><div style="font-weight:700;font-size:16px">Wallet de zakat</div>
+        <p class="note">Indique depuis quand tu as l'argent actuellement enregistré dans tes comptes : il formera ta première tranche.</p>
+        <div class="row"><button class="btn primary" id="wStart">Choisir la date de départ</button></div></div>`;
+      $("wStart").onclick = () => modeSheet();
+      return;
+    }
+    const hero = !r || !w ? `<div class="hero"><div class="top"><span class="lbl">Wallet de zakat</span></div><div class="big">…</div><div class="line"><span>Récupération des cours du jour…</span></div></div>`
+      : `<div class="hero">
+        <div class="top"><span class="lbl">Wallet de zakat · à verser</span><span class="badge${w.broken ? " off" : ""}">${w.broken ? "Sous le nisab" : "Nisab atteint"}</span></div>
+        <div class="big">${money(r.remaining)}</div>
+        <div class="line"><span>Zakat devenue due</span><b>${money(r.totalDue)}</b></div>
+        <div class="line"><span>Déjà versé</span><b>${money(r.paid)}</b></div>
+        <div class="line"><span>Patrimoine soumis / nisab (${nisabLbl})</span><b>${money(r.baseCents)} / ${money(r.nisabCents)}</b></div></div>`;
+    const brokenAlert = w && w.broken ? `<div class="alert late">⚠️<span>Ton total est passé sous le nisab${w.brokenSince ? " le " + dfr(w.brokenSince) : ""} : selon l'école malikite, le hawl de toutes tes tranches est interrompu. Il recommencera le jour où ton total atteindra de nouveau le nisab.</span></div>` : "";
+    const next = w ? w.lots.slice().sort((a, b) => (a.end < b.end ? -1 : 1)).map(l => {
+      const d = daysTo(l.end);
+      return `<div class="item"><span class="mid"><div>${money(l.cents)} depuis le ${fromIso(l.date).toLocaleDateString("fr-FR")}</div><small>Échéance : ${esc(dboth(l.end))}${d >= 0 ? " · dans " + d + " j" : ""}</small></span>
+        <span class="amt">${money(l.zakat)}<small>de zakat</small></span></div>`; }).join("") : "";
+    const dueItems = [
+      ...(w ? w.due : []).map(x => ({ date: x.date, label: `Hawl de ${money(x.base)}`, sub: `Tranche du ${dfr(x.from)} · due le ${dfr(x.date)}`, cents: x.cents })),
+      ...(r ? r.repayItems : []).map(x => ({ date: x.date, label: x.label, sub: `Zakat d'une année · ${dfr(x.date)}`, cents: x.cents })),
+      ...S.years.map(y => ({ date: y.end, label: "Zakat de l'année (mode annuel)", sub: `Calculée le ${dfr(y.closedAt)}`, cents: toRef(y.dueCents, y.ref) || 0 }))
+    ].sort((a, b) => (a.date < b.date ? -1 : 1));
+    let pool = r ? r.paid : 0;
+    const dueHtml = dueItems.map(it => { const used = Math.min(pool, it.cents); pool -= used; const rest = it.cents - used;
+      return `<div class="item"><span class="mid"><div>${esc(it.label)}</div><small>${esc(it.sub)}</small></span>
+        <span class="amt">${money(it.cents)}<small>${rest > 0 ? "reste " + money(rest) : "✓ versée"}</small></span></div>`; }).reverse().join("");
+    const pays = S.payments.map(p => `<button class="item" data-pay="${esc(p.id)}">
+        <span class="mid"><div>${esc(p.beneficiary || "Versement")}</div><small>${esc(p.category)} · ${dfr(p.date)}</small></span>
+        <span class="amt">${money(p.cents, p.currency)}</span></button>`).join("") || `<div class="item empty">Aucun versement enregistré.</div>`;
+    const moves = S.movements.slice().reverse().slice(0, 20).map(m => { const v = moveRef(m);
+      return `<button class="item" data-move="${esc(m.id)}"><span class="mid"><div>${esc(m.label || "Mouvement")}</div><small>${dfr(m.date)}</small></span>
+        <span class="amt" style="color:${v < 0 ? "var(--danger)" : "var(--ok)"}">${v > 0 ? "+" : ""}${money(v)}</span></button>`; }).join("") || `<div class="item empty">Aucun mouvement.</div>`;
+    const debts = S.debts.map(d => `<button class="item" data-debt="${esc(d.id)}"><span class="mid"><div>${esc(d.name)}</div></span><span class="amt">${money(d.cents, d.currency)}</span></button>`).join("");
+    $("p-zakat").innerHTML = `
+      ${hero}${brokenAlert}
+      <h2>Prochaines échéances</h2>
+      <div class="list">${next || `<div class="item empty">Aucune tranche en cours.</div>`}</div>
+      <p class="note">Chaque somme a son propre hawl : une hausse de tes comptes crée une nouvelle tranche, une baisse est retirée de la tranche la plus récente. Quand une tranche a un an (calendrier hégirien), 2,5 % s'ajoutent au wallet.</p>
+      <h2>Zakat devenue due</h2>
+      <div class="list">${dueHtml || `<div class="item empty">Rien pour l'instant : ta première tranche arrive à échéance plus tard.</div>`}</div>
+      <h2>Versements <button id="addPay">＋ Ajouter</button></h2>
+      <div class="list">${pays}</div>
+      <h2>Mouvements de mes comptes</h2>
+      <div class="list">${moves}</div>
+      <p class="note">Enregistrés quand tu modifies un solde. Touche un mouvement pour corriger sa date (par exemple un salaire reçu hier).</p>
+      <h2>Mes dettes <button id="addDebt">＋ Ajouter</button></h2>
+      <div class="list">${debts || `<div class="item empty">Aucune dette enregistrée.</div>`}
+        <button class="item" id="surplusBtn"><span class="mid"><div>Biens non soumis en surplus</div><small>La dette se règle d'abord sur eux (malikite)</small></span><span class="amt">${money(st.surplusCents || 0, st.surplusCur)}</span></button></div>
+      ${r && S.debts.length ? `<p class="note">Dette déduite des tranches à venir : ${money(r.deductibleCents)}.</p>` : ""}`;
+    const P = $("p-zakat");
+    P.querySelectorAll("[data-pay]").forEach(b => (b.onclick = () => paymentSheet(S.payments.find(p => p.id === b.dataset.pay))));
+    P.querySelectorAll("[data-debt]").forEach(b => (b.onclick = () => debtSheet(S.debts.find(d => d.id === b.dataset.debt))));
+    P.querySelectorAll("[data-move]").forEach(b => (b.onclick = () => moveSheet(S.movements.find(m => m.id === b.dataset.move))));
+    $("addPay").onclick = () => paymentSheet(); $("addDebt").onclick = () => debtSheet(); $("surplusBtn").onclick = surplusSheet;
+  }
+
+  function moveSheet(m) {
+    const isInit = m.id === "init";
+    openSheet(`<h3>${esc(m.label || "Mouvement")}</h3>
+      <div class="cur">${isInit ? "Ta première tranche : l'argent présent au début du suivi." : "La date compte pour le hawl de cette somme."}</div>
+      <label class="f" for="mDate">Date</label><input id="mDate" type="date" class="small" value="${m.date}">
+      <label class="f" for="mAmt">Montant (${m.ref}, négatif pour une baisse)</label><input id="mAmt" inputmode="decimal" value="${(m.cents / 100).toFixed(2).replace(".", ",")}">
+      <div class="row"><button class="btn primary" id="mSave">Enregistrer</button></div>
+      ${isInit ? "" : `<div class="row"><button class="btn danger" id="mDel">Supprimer ce mouvement</button></div>`}`);
+    $("mSave").onclick = async () => {
+      const cents = toCents($("mAmt").value.replace(/^\s*−/, "-"));
+      if (isNaN(cents)) return toast("Montant invalide", true);
+      const date = $("mDate").value || m.date;
+      await put("movements", Object.assign({}, m, { date, cents }));
+      if (isInit) await saveSettings({ lotsStart: date });
+      await loadAll(); closeSheet(); renderAll(); toast("Mouvement mis à jour");
+    };
+    if ($("mDel")) $("mDel").onclick = async () => { if (!confirm("Supprimer ce mouvement ?")) return; await del("movements", m.id); await loadAll(); closeSheet(); renderAll(); };
+  }
+
+  function modeSheet() {
+    const st = S.settings;
+    openSheet(`<h3>Mode de calcul de la zakat</h3>
+      <div class="chips"><button class="chip" data-mode="lots" aria-pressed="${st.mode === "lots"}">Wallet : chaque somme a son hawl</button>
+        <button class="chip" data-mode="yearly" aria-pressed="${st.mode !== "lots"}">Une échéance par an</button></div>
+      <div class="info ok" id="modeInfo"></div>
+      <div id="lotsBox"><label class="f" for="lsDate">Date de départ de l'argent actuel</label><input id="lsDate" type="date" class="small" value="${st.lotsStart || todayIso()}"></div>
+      <div class="row"><button class="btn primary" id="modeSave">Enregistrer</button></div>`);
+    let mode = st.mode === "lots" ? "lots" : "yearly";
+    const show = () => {
+      $("lotsBox").hidden = mode !== "lots";
+      $("modeInfo").textContent = mode === "lots"
+        ? "Chaque jour, l'appli suit tes comptes. Chaque somme a son propre hawl : quand elle a un an (calendrier hégirien), sa zakat s'ajoute au wallet. Tu paies quand tu veux, en une ou plusieurs fois."
+        : "Une seule année de zakat : le jour de l'échéance, tu calcules ta zakat sur tout ton patrimoine et le montant est figé.";
+    };
+    bindChips($("sheet"), "data-mode", v => { mode = v; show(); }); show();
+    $("modeSave").onclick = async () => {
+      if (mode === "lots") await saveSettings({ mode: "lots", lotsStart: $("lsDate").value || todayIso() });
+      else await saveSettings({ mode: "yearly" });
+      await loadAll(); closeSheet(); renderAll(); toast("Mode de calcul enregistré");
+    };
+  }
+
   // ---------- Suivi du hawl ----------
   // À chaque ouverture, l'appli note le patrimoine du jour face au nisab.
   // École malikite : si le patrimoine passe sous le nisab pendant l'année, le hawl est interrompu
@@ -614,8 +748,11 @@
 
   function renderAll() {
     const r = compute();
-    renderAccounts(r); renderLoans(r); renderZakat(r); updateStatus();
-    hawlCheck(r);
+    renderAccounts(r); renderLoans(r);
+    if (walletMode()) renderWallet(r); else renderZakat(r);
+    updateStatus();
+    if (walletMode()) { if (market && S.settings.lotsStart && !(S.movements.find(m => m.id === "init" && m.date === S.settings.lotsStart))) ensureInit().then(ch => { if (ch) renderAll(); }); }
+    else hawlCheck(r);
   }
 
   // ================= FORMULAIRES =================
@@ -652,9 +789,11 @@
         else if (isNaN(d.cents)) return toast("Montant invalide", true);
         d.name = d.name.trim() || (d.type === "cash" && d.bank !== "Autre" ? d.bank : TYPES[d.type]);
         if (d.type !== "cash") delete d.bank;
-        await put("accounts", d); await loadAll(); closeSheet(); renderAll(); toast(isNew ? "Compte ajouté" : "Compte mis à jour");
+        const before = isNew ? 0 : valueRef(a);
+        await put("accounts", d);
+        await recordMove(todayIso(), valueRef(d) - before, isNew ? "Nouveau compte : " + d.name : "Solde de " + d.name); await loadAll(); closeSheet(); renderAll(); toast(isNew ? "Compte ajouté" : "Compte mis à jour");
       };
-      if ($("fDel")) $("fDel").onclick = async () => { if (!confirm("Supprimer « " + d.name + " » ?")) return; await del("accounts", d.id); await loadAll(); closeSheet(); renderAll(); toast("Compte supprimé"); };
+      if ($("fDel")) $("fDel").onclick = async () => { if (!confirm("Supprimer « " + d.name + " » ?")) return; await del("accounts", d.id); await recordMove(todayIso(), -valueRef(a), "Compte supprimé : " + d.name); await loadAll(); closeSheet(); renderAll(); toast("Compte supprimé"); };
     };
     draw();
   }
@@ -705,6 +844,7 @@
       if (acc) {
         const add = acc.currency === l.currency ? cents : Math.round(cents * Z.rateFor(market, l.currency) / Z.rateFor(market, acc.currency));
         await put("accounts", Object.assign({}, acc, { cents: (acc.cents || 0) + add }));
+        await recordMove($("rDate").value || todayIso(), toRef(add, acc.currency) || 0, "Remboursement de " + l.name);
       }
       await loadAll(); renderAll();
       openSheet(`<h3>Zakat sur ce remboursement</h3>
@@ -812,6 +952,8 @@
     openSheet(`<h3>Réglages</h3>
       ${s ? `<div class="cur">Connecté : ${esc(s.user.email || "")}</div>` : `<div class="cur">${CLOUD ? "Non connecté" : "Mode local : les données restent sur cet appareil."}</div>`}
       <label class="f" for="stRef">Devise de référence</label><select id="stRef">${CURRENCIES.map(c => `<option${c === st.ref ? " selected" : ""}>${c}</option>`).join("")}</select>
+      <label class="f">Mode de calcul de la zakat</label>
+      <div class="list" style="margin-bottom:12px"><button class="item" id="stMode"><span class="mid"><div>${st.mode === "lots" ? "Wallet : chaque somme a son hawl" : "Une échéance par an"}</div><small>${st.mode === "lots" && st.lotsStart ? "Départ : " + dfr(st.lotsStart) : "Toucher pour changer"}</small></span><span class="amt">›</span></button></div>
       <label class="f" for="stNisab">Nisab de référence</label><select id="stNisab"><option value="gold"${st.nisabRef !== "silver" ? " selected" : ""}>Or : 85 g</option><option value="silver"${st.nisabRef === "silver" ? " selected" : ""}>Argent : 595 g</option></select>
       <div class="stack">
         ${s && passkey.supported() ? `<button class="btn ghost" id="pkAdd">${passkey.known() ? "Face ID activé ✓ · ajouter cet appareil" : "Activer la connexion Face ID"}</button>` : ""}
@@ -821,6 +963,7 @@
       </div>
       <p class="note">Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
     $("stRef").onchange = async () => { await saveSettings({ ref: $("stRef").value }); market = S.meta["market_" + S.settings.ref] || null; renderAll(); loadMarket(); };
+    $("stMode").onclick = () => modeSheet();
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
     if ($("pkAdd")) $("pkAdd").onclick = () => passkey.register();
     if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);

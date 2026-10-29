@@ -90,10 +90,59 @@
     return { lines, excluded, totalCents: total, debtCents: totalDebt, deductibleCents: deductible, baseCents: base, nisabCents: nisab, reached, dueCents: due };
   }
 
+
+  // ---------- Wallet de zakat : chaque somme a son propre hawl ----------
+  // movements : [{ date: "AAAA-MM-JJ", cents (signé, devise de référence), nisab (nisab du jour, optionnel) }]
+  // opts : { today, hawlEnd(date) -> date d'échéance, debtCents (dette déductible aujourd'hui) }
+  // Une hausse crée une tranche datée ; une baisse est retirée des tranches les plus récentes.
+  // Quand une tranche a fait son hawl, 2,5 % de son montant deviennent dus et elle repart pour un an.
+  // Si le total passe sous le nisab, toutes les tranches repartent à zéro (école malikite).
+  function computeLots(movements, opts) {
+    const hawlEnd = opts.hawlEnd, today = opts.today;
+    const ev = movements.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    let lots = [], total = 0, broken = false, brokenSince = null;
+    const due = [];
+    const mature = upto => {
+      for (;;) {
+        let k = -1, best = null;
+        lots.forEach((l, i) => { const e = hawlEnd(l.date); if (e <= upto && (best === null || e < best)) { best = e; k = i; } });
+        if (k < 0) return;
+        const l = lots[k];
+        if (l.cents > 0) due.push({ date: best, from: l.date, base: l.cents, cents: applyRate(l.cents) });
+        l.date = best;
+      }
+    };
+    const takeNewest = amount => {
+      for (let i = lots.length - 1; i >= 0 && amount > 0; i--) {
+        const t = Math.min(lots[i].cents, amount); lots[i].cents -= t; amount -= t;
+      }
+      lots = lots.filter(l => l.cents > 0);
+    };
+    for (const m of ev) {
+      mature(m.date);
+      total += m.cents;
+      if (m.nisab && total < m.nisab) { if (!broken) brokenSince = m.date; lots = []; broken = true; continue; }
+      if (broken) { lots = total > 0 ? [{ date: m.date, cents: total }] : []; broken = false; brokenSince = null; continue; }
+      if (m.cents > 0) {
+        const last = lots[lots.length - 1];
+        if (last && last.date === m.date) last.cents += m.cents; else lots.push({ date: m.date, cents: m.cents });
+      } else if (m.cents < 0) takeNewest(-m.cents);
+    }
+    mature(today);
+    // La dette déductible d'aujourd'hui réduit les tranches à venir, en commençant par les plus récentes
+    const open = lots.map(l => ({ date: l.date, cents: l.cents }));
+    let debt = Math.max(0, opts.debtCents || 0);
+    for (let i = open.length - 1; i >= 0 && debt > 0; i--) { const t = Math.min(open[i].cents, debt); open[i].cents -= t; debt -= t; }
+    return {
+      lots: open.filter(l => l.cents > 0).map(l => ({ date: l.date, cents: l.cents, end: hawlEnd(l.date), zakat: applyRate(l.cents) })),
+      due, dueCents: due.reduce((s, d) => s + d.cents, 0), total, broken, brokenSince
+    };
+  }
+
   // Zakat d'une seule année sur un prêt remboursé (malikite)
   const zakatOnRepayment = cents => applyRate(cents);
 
-  const api = { calculate, zakatOnRepayment, pureGrams, rateFor, nisabCents, GOLD_NISAB_G, SILVER_NISAB_G };
+  const api = { calculate, computeLots, zakatOnRepayment, applyRate, pureGrams, rateFor, nisabCents, GOLD_NISAB_G, SILVER_NISAB_G };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.ZakatEngine = api;
 })(typeof self !== "undefined" ? self : this);

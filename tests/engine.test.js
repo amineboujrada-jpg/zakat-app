@@ -33,3 +33,31 @@ test("13. Or + argent par parts", () => {
   assert.equal(r.baseCents, 454750); assert.equal(r.reached, true); assert.equal(r.dueCents, 11369);
 });
 test("14. Or 18 carats", () => assert.equal(Z.pureGrams({ type: "gold", grams: 40, carats: 18 }), 30));
+
+// ---------- Wallet : chaque somme a son propre hawl (année simplifiée à 354 jours) ----------
+const addD = (s, n) => { const d = new Date(s + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const end = s => addD(s, 354);
+test("15. Wallet : l'exemple 10 000 € puis +2 000 €", () => {
+  const mv = [{ date: "2025-01-01", cents: 1000000 }, { date: "2025-01-02", cents: 200000 }];
+  let r = Z.computeLots(mv, { today: end("2025-01-01"), hawlEnd: end });
+  assert.equal(r.dueCents, 25000);           // 250 € le jour du hawl des 10 000 €
+  r = Z.computeLots(mv, { today: end("2025-01-02"), hawlEnd: end });
+  assert.equal(r.dueCents, 30000);           // + 50 € le lendemain
+  assert.equal(r.lots.length, 2);            // les deux tranches repartent pour un an
+});
+test("16. Wallet : une dépense est retirée de la tranche la plus récente", () => {
+  const mv = [{ date: "2025-01-01", cents: 1000000 }, { date: "2025-03-01", cents: 300000 }, { date: "2025-04-01", cents: -400000 }];
+  const r = Z.computeLots(mv, { today: end("2025-01-01"), hawlEnd: end });
+  assert.equal(r.dueCents, 22500);           // 9 000 € restants de la première tranche
+});
+test("17. Wallet : passage sous le nisab = remise à zéro", () => {
+  const mv = [{ date: "2025-01-01", cents: 1000000, nisab: 850000 }, { date: "2025-05-01", cents: -500000, nisab: 850000 }, { date: "2025-06-01", cents: 500000, nisab: 850000 }];
+  let r = Z.computeLots(mv, { today: end("2025-01-01"), hawlEnd: end });
+  assert.equal(r.dueCents, 0);
+  r = Z.computeLots(mv, { today: end("2025-06-01"), hawlEnd: end });
+  assert.equal(r.dueCents, 25000);           // le hawl a recommencé le 1er juin pour les 10 000 €
+});
+test("18. Wallet : la dette réduit les tranches à venir", () => {
+  const r = Z.computeLots([{ date: "2025-01-01", cents: 1000000 }], { today: "2025-02-01", hawlEnd: end, debtCents: 200000 });
+  assert.equal(r.lots[0].cents, 800000); assert.equal(r.lots[0].zakat, 20000);
+});
