@@ -716,11 +716,14 @@
     openSheet(`<h3>${esc(m.label || "Mouvement")}</h3>
       <div class="cur">${isInit ? "Ta première tranche : l'argent présent au début du suivi." : "La date compte pour le hawl de cette somme."}</div>
       <label class="f" for="mDate">Date</label><input id="mDate" type="date" class="small" value="${m.date}">
-      <label class="f" for="mAmt">Montant (${m.ref}, négatif pour une baisse)</label><input id="mAmt" inputmode="decimal" value="${(m.cents / 100).toFixed(2).replace(".", ",")}">
+      ${isInit ? "" : `<div class="chips"><button class="chip" data-sign="1" aria-pressed="${m.cents >= 0}">＋ Hausse</button><button class="chip" data-sign="-1" aria-pressed="${m.cents < 0}">− Baisse</button></div>`}
+      <label class="f" for="mAmt">Montant (${m.ref})</label><input id="mAmt" inputmode="decimal" value="${(Math.abs(m.cents) / 100).toFixed(2).replace(".", ",")}">
       <div class="row"><button class="btn primary" id="mSave">Enregistrer</button></div>
       ${isInit ? "" : `<div class="row"><button class="btn danger" id="mDel">Supprimer ce mouvement</button></div>`}`);
+    let sign = m.cents < 0 ? -1 : 1;
+    bindChips($("sheet"), "data-sign", v => (sign = Number(v)));
     $("mSave").onclick = async () => {
-      const cents = toCents($("mAmt").value.replace(/^\s*−/, "-"));
+      const cents = sign * Math.abs(toCents($("mAmt").value));
       if (isNaN(cents)) return toast("Montant invalide", true);
       const date = $("mDate").value || m.date;
       await put("movements", Object.assign({}, m, { date, cents }));
