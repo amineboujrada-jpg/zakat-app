@@ -323,8 +323,18 @@
   const SYM = { EUR: "€", MAD: "DH", USD: "$" };
   const money = (cents, cur) => (cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (SYM[cur || S.settings.ref] || cur);
   const inputVal = cents => cents ? (cents / 100).toFixed(2).replace(".", ",") : "";
-  const BANKS = { "LCL": ["EUR", "#1b3a8c"], "Boursorama": ["EUR", "#d6006e"], "Fortuneo": ["EUR", "#5f7f1f"], "Revolut": ["EUR", "#191c1f"],
-    "Wise": ["EUR", "#2f6b1f"], "PayPal": ["EUR", "#003087"], "CIH": ["MAD", "#c8001a"], "Espèces": ["EUR", "#5b6b64"], "Autre": ["EUR", "#1f6b52"] };
+  // Suggestions seulement : chacun peut écrire le nom de n'importe quelle banque.
+  // [devise proposée] — la couleur de la pastille est calculée à partir du nom.
+  const BANK_SUGGESTIONS = {
+    EUR: ["BNP Paribas", "Société Générale", "Crédit Agricole", "Banque Populaire", "Caisse d'Épargne", "LCL", "La Banque Postale", "CIC", "Crédit Mutuel",
+      "BoursoBank (Boursorama)", "Fortuneo", "Hello bank!", "Monabanq", "Ma French Bank", "Shine", "Qonto", "N26", "Revolut", "Wise", "PayPal", "Lydia / Sumeria", "Nickel", "Trade Republic"],
+    MAD: ["Attijariwafa bank", "Banque Populaire (Maroc)", "CIH Bank", "Bank of Africa (BMCE)", "Société Générale Maroc", "Crédit du Maroc", "BMCI", "Al Barid Bank", "CFG Bank", "Umnia Bank", "Bank Assafa", "Al Akhdar Bank", "Dar Al Amane"],
+    "": ["Espèces", "Coffre / épargne à la maison"]
+  };
+  const suggestCurrency = name => { for (const [c, list] of Object.entries(BANK_SUGGESTIONS)) if (c && list.includes(name)) return c; return null; };
+  const AV_COLORS = ["#1b3a8c", "#b3261e", "#1f6b52", "#7a3e9d", "#c25b00", "#0f6e8a", "#5b6b64", "#9a1f5b", "#3f5f1f", "#191c1f"];
+  const avColor = n => { let h = 0; for (const ch of String(n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; };
+  const initials = n => { const w = String(n).replace(/[()!/]/g, " ").trim().split(/\s+/).filter(Boolean); return ((w[0] || "?")[0] + (w[1] ? w[1][0] : (w[0] || "")[1] || "")).toUpperCase(); };
   const TYPES = { cash: "Compte", gold: "Or", silver: "Argent", crypto: "Crypto" };
   const CATEGORIES = ["Pauvres", "Nécessiteux", "Collecteurs de la zakat", "Ceux dont on rapproche les cœurs", "Affranchissement", "Endettés", "Dans le sentier d'Allah", "Voyageur en difficulté"];
   const RELATIONS = [
@@ -535,8 +545,8 @@
     const total = r ? r.accountsTotal : null;
     const otherVal = r && market ? Math.round(total / Z.rateFor(market, other)) : null;
     const items = S.accounts.map(a => {
-      const bank = BANKS[a.bank] ? a.bank : null;
-      const av = bank ? `<span class="av" style="background:${BANKS[bank][1]}">${esc(bank.slice(0, 2).toUpperCase())}</span>`
+      const bank = a.type === "cash" ? (a.name || a.bank) : null;
+      const av = bank ? `<span class="av" style="background:${avColor(bank)}">${esc(initials(bank))}</span>`
         : `<span class="av soft">${esc(TYPES[a.type].slice(0, 2))}</span>`;
       const ex = r && r.excluded.find(e => e.id === a.id);
       let sub = a.type === "gold" ? `${String(a.grams).replace(".", ",")} g · ${a.carats} carats${a.usage === "worn" ? " · porté" : ""}`
@@ -864,7 +874,7 @@
   };
   function accountSheet(a) {
     const isNew = !a;
-    const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", bank: "LCL", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
+    const d = a ? Object.assign({}, a) : { id: uid(), type: "cash", name: "", cents: 0, currency: "EUR", grams: 0, carats: 24, usage: "savings", created: new Date().toISOString() };
     let op = "add", opTyped = null; // compte existant : ajouter, retirer ou remplacer
     const draw = () => {
       const metal = d.type === "gold" || d.type === "silver";
@@ -881,9 +891,10 @@
       openSheet(`<h3>${isNew ? "Ajouter un compte" : "Modifier le compte"}</h3>
         <div class="cur">${isNew ? "Banque, espèces, or, argent ou crypto." : "Mets à jour le solde quand il change."}</div>
         ${isNew ? `<div class="chips">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${d.type === k}">${t}</button>`).join("")}</div>` : ""}
-        ${d.type === "cash" ? `<label class="f" for="fBank">Banque</label><select id="fBank">${Object.keys(BANKS).map(b => `<option${b === d.bank ? " selected" : ""}>${b}</option>`).join("")}</select>` : ""}
-        <label class="f" for="fName">Nom${d.type === "cash" ? " (facultatif, ex. LCL Épargne)" : ""}</label>
-        <input id="fName" class="small" value="${esc(d.name)}" autocomplete="off">
+        <label class="f" for="fName">${d.type === "cash" ? "Banque ou nom du compte" : "Nom"}</label>
+        <input id="fName" class="small" value="${esc(d.name)}" autocomplete="off" ${d.type === "cash" ? `list="bankList" placeholder="Ex. BNP Paribas, Attijariwafa, Espèces…"` : ""}>
+        ${d.type === "cash" ? `<datalist id="bankList">${Object.values(BANK_SUGGESTIONS).flat().map(b => `<option value="${esc(b)}"></option>`).join("")}</datalist>
+          <div class="cur" style="margin:-6px 0 12px">Écris le nom de ta banque : des suggestions s'affichent, mais toutes les banques sont acceptées.</div>` : ""}
         ${opBox}
         ${metal ? `${isNew ? `<label class="f" for="fGrams">Poids (g)</label><input id="fGrams" inputmode="decimal" value="${d.grams ? String(d.grams).replace(".", ",") : ""}">` : ""}
           ${d.type === "gold" ? `<label class="f" for="fCarats">Carats</label><select id="fCarats">${[24, 22, 21, 18].map(c => `<option value="${c}"${c === d.carats ? " selected" : ""}>${c} carats</option>`).join("")}</select>
@@ -904,7 +915,7 @@
       const keep = () => { d.name = $("fName").value; if ($("fAmt")) d.cents = toCents($("fAmt").value) || 0; if ($("fGrams")) d.grams = parse($("fGrams").value) || 0; };
       bindChips(sh, "data-type", t => { keep(); d.type = t; if (t === "crypto") d.currency = S.settings.ref; draw(); });
       bindChips(sh, "data-usage", u => { d.usage = u; $("usageInfo").textContent = u === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."; });
-      if ($("fBank")) $("fBank").onchange = () => { d.bank = $("fBank").value; if (isNew) $("fCur").value = BANKS[d.bank][0]; };
+      if (isNew && d.type === "cash") $("fName").oninput = () => { const c = suggestCurrency($("fName").value.trim()); if (c && $("fCur")) $("fCur").value = c; };
       const opValue = () => {
         if (isNew || !$("fOp")) return null;
         const raw = $("fOp").value.trim().replace(/^−/, "-");
@@ -933,14 +944,15 @@
             if (isMetal()) d.grams = v; else d.cents = v;
           }
         }
-        if (d.type === "cash") { d.bank = $("fBank").value; d.currency = $("fCur").value; }
+        if (d.type === "cash") d.currency = $("fCur").value;
         if (!isNew && d.currency !== a.currency && !confirm("Changer la devise ne convertit pas le montant : " + money(d.cents, a.currency) + " deviendra " + money(d.cents, d.currency) + ". Continuer ?")) return;
         if (d.type === "crypto") d.currency = $("fCur").value;
         if (d.type === "gold") d.carats = Number($("fCarats").value);
         if (d.type === "gold" || d.type === "silver") { if (!(d.grams > 0)) return toast("Indique le poids en grammes", true); d.cents = 0; }
         else if (isNaN(d.cents)) return toast("Montant invalide", true);
-        d.name = d.name.trim() || (d.type === "cash" && d.bank !== "Autre" ? d.bank : TYPES[d.type]);
-        if (d.type !== "cash") delete d.bank;
+        d.name = d.name.trim();
+        if (!d.name) { if (d.type === "cash") return toast("Indique le nom de la banque ou du compte", true); d.name = TYPES[d.type]; }
+        delete d.bank;
         const before = isNew ? 0 : valueRef(a);
         await put("accounts", d);
         await recordMove(todayIso(), valueRef(d) - before, isNew ? "Nouveau compte : " + d.name : "Solde de " + d.name); await loadAll(); closeSheet(); renderAll(); toast(isNew ? "Compte ajouté" : "Compte mis à jour");
