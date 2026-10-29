@@ -123,7 +123,9 @@
   .opbtn { flex: none; width: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
     display: grid; place-items: center; padding: 0; }
   .opbtn svg { width: 20px; height: 20px; }
-  .opbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .opbtn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .opbtn[data-op="add"][aria-pressed="true"], .opbtn[data-sign="1"][aria-pressed="true"] { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .opbtn[data-op="sub"][aria-pressed="true"], .opbtn[data-sign="-1"][aria-pressed="true"] { background: var(--danger); color: #fff; border-color: var(--danger); }
   .btn { flex: 1; border: 0; border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 700; }
   .btn.primary { background: var(--accent); color: var(--accent-fg); }
   .btn.ghost { background: var(--surface-2); border: 1px solid var(--line); }
@@ -151,13 +153,23 @@
   .auth .or::before, .auth .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .auth .msg { border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; line-height: 1.4; background: var(--surface-2); }
   .auth .msg.err { background: var(--danger-bg); color: var(--danger); }
-  .lock { position: fixed; inset: 0; z-index: 18; background: var(--bg); display: grid; place-items: center; padding: 24px; text-align: center; }
-  .lock .box { max-width: 340px; width: 100%; }
-  .lock img { width: 72px; height: 72px; border-radius: 18px; margin-bottom: 16px; }
-  .lock h2 { display: block; font-size: 22px; margin: 0 0 6px; }
-  .lock p { color: var(--muted); margin: 0 0 22px; line-height: 1.45; }
-  .lock .btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .lock .alt { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 14px 0 0; }
+  .lock { position: fixed; inset: 0; z-index: 18; background: var(--bg); display: grid; place-items: center; padding: calc(20px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px)); text-align: center; overflow-y: auto; }
+  .lock .box { max-width: 320px; width: 100%; }
+  .lock img { width: 60px; height: 60px; border-radius: 15px; margin-bottom: 12px; }
+  .lock h2 { display: block; font-size: 21px; margin: 0 0 6px; }
+  .lock p { color: var(--muted); margin: 0 0 18px; line-height: 1.45; font-size: 14px; min-height: 20px; }
+  .lock p.err { color: var(--danger); font-weight: 600; }
+  .dots { display: flex; justify-content: center; gap: 14px; margin: 4px 0 26px; }
+  .dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--fg); }
+  .dots i.on { background: var(--fg); }
+  .dots.shake { animation: shake .35s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  .pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 22px; justify-content: center; }
+  .pad button { width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--surface-2); font-size: 28px; font-weight: 500; color: var(--fg); display: grid; place-items: center; }
+  .pad button:active { background: var(--line); }
+  .pad button.ghost { background: transparent; }
+  .pad button svg { width: 30px; height: 30px; }
+  .lock .alt { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 14px; padding: 18px 0 0; }
   .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -160%);
     background: var(--accent); color: var(--accent-fg); padding: 10px 16px; border-radius: 12px; font-weight: 700; font-size: 14px; z-index: 20;
     transition: transform .2s; max-width: calc(100% - 32px); }
@@ -226,12 +238,18 @@
 <div class="lock" id="lock" hidden>
   <div class="box">
     <img src="icon-192.png" alt="">
-    <h2>Zakat est verrouillée</h2>
-    <p>Utilise Face ID pour ouvrir l'appli.</p>
-    <button class="btn primary" id="unlockBtn" type="button">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1.5M15 9v1.5M12 9v4.5h-1"/><path d="M9.5 16a3.5 3.5 0 0 0 5 0"/></svg>
-      Déverrouiller avec Face ID</button>
-    <button class="alt" id="unlockPass" type="button">Utiliser mon mot de passe</button>
+    <h2 id="lkTitle">Zakat est verrouillée</h2>
+    <p id="lkMsg">Entre ton code ou utilise Face ID.</p>
+    <div class="dots" id="lkDots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="pad" id="lkPad">
+      <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
+      <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
+      <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
+      <button type="button" class="ghost" id="lkFace" aria-label="Déverrouiller avec Face ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9v1.5M15 9v1.5M12 9v4.5h-1"/><path d="M9.5 16a3.5 3.5 0 0 0 5 0"/></svg></button>
+      <button type="button" data-k="0">0</button>
+      <button type="button" class="ghost" data-k="del" aria-label="Effacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m16 9-5 5M11 9l5 5"/></svg></button>
+    </div>
+    <button class="alt" id="lkForgot" type="button">Code oublié ?</button>
   </div>
 </div>
 
@@ -1100,7 +1118,13 @@
       <label class="f" for="stNisab">Nisab de référence</label><select id="stNisab"><option value="gold"${st.nisabRef !== "silver" ? " selected" : ""}>Or : 85 g</option><option value="silver"${st.nisabRef === "silver" ? " selected" : ""}>Argent : 595 g</option></select>
       <div class="stack">
         ${s && passkey.supported() ? `<button class="btn ghost" id="pkAdd">${passkey.known() ? "Face ID activé ✓ · ajouter cet appareil" : "Activer la connexion Face ID"}</button>` : ""}
-        ${s && passkey.supported() ? `<button class="toggle" id="lockTgl" aria-pressed="${appLock.enabled()}" type="button" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-weight:600;width:100%"><span style="text-align:left">Face ID à chaque ouverture<small style="display:block;color:var(--muted);font-weight:500;font-size:12.5px">Verrouille l'appli quand tu la quittes plus de 30 s</small></span><span style="font-weight:800;color:${appLock.enabled() ? "var(--ok)" : "var(--muted)"}">${appLock.enabled() ? "Activé" : "Désactivé"}</span></button>` : ""}
+      </div>
+      <label class="f" style="margin-top:14px">Sécurité</label>
+      <label class="f" for="stDelay" style="font-weight:600">Demander le code</label>
+      <select id="stDelay">${DELAYS.map(([v, t]) => `<option value="${v}"${v === appLock.delay() ? " selected" : ""}>${t}${v ? " après avoir quitté l'appli" : " à chaque ouverture"}</option>`).join("")}</select>
+      <div class="stack">
+        <button class="btn ghost" id="stPin">Changer mon code</button>
+        ${passkey.supported() && passkey.known() ? `<button class="btn ghost" id="stFace">Face ID pour déverrouiller : ${appLock.faceOn() ? "activé ✓" : "désactivé"}</button>` : ""}
         ${s ? `<button class="btn ghost" id="syncNow">Synchroniser maintenant</button>` : ""}
         <button class="btn ghost" id="exportBtn">Exporter une sauvegarde</button>
         ${s ? `<button class="btn danger" id="logout">Se déconnecter</button>` : ""}
@@ -1110,13 +1134,9 @@
     $("stMode").onclick = () => modeSheet();
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
     if ($("pkAdd")) $("pkAdd").onclick = () => passkey.register();
-    if ($("lockTgl")) $("lockTgl").onclick = async () => {
-      if (appLock.enabled()) { appLock.set(false); settingsSheet(); toast("Verrouillage Face ID désactivé"); return; }
-      if (!passkey.known()) { toast("Active d'abord la connexion Face ID", true); return; }
-      try { if (!(await appLock.verify())) return toast("Face ID non vérifié", true); }
-      catch (e) { return toast(passkey.err(e), true); }
-      appLock.set(true); settingsSheet(); toast("Face ID sera demandé à chaque ouverture");
-    };
+    $("stDelay").onchange = () => { appLock.patch({ delay: Number($("stDelay").value) }); toast("Réglage enregistré"); };
+    $("stPin").onclick = () => appLock.open("setup", "Choisis ton nouveau code à 6 chiffres.");
+    if ($("stFace")) $("stFace").onclick = () => { appLock.patch({ face: !appLock.faceOn() }); settingsSheet(); };
     if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);
     if ($("logout")) $("logout").onclick = async () => { if (!confirm("Se déconnecter ? Les données de cet appareil seront effacées (elles restent sur ton compte).")) return; closeSheet(); await cloud.signOut(); };
     $("exportBtn").onclick = () => {
@@ -1357,7 +1377,9 @@
       const u = cloud.session.user;
       if (S.meta.userId && S.meta.userId !== u.id) await cloud.wipeLocal(); // un autre compte utilisait cet appareil
       if (S.meta.userId !== u.id) { await setMeta("userId", u.id); await setMeta("lastPull", undefined); }
+      const wasShown = !$("auth").hidden;
       $("auth").hidden = true;
+      if (wasShown && typeof appLock !== "undefined") appLock.afterLogin();
       if (cloud.linkMsg) { toast(cloud.linkMsg); cloud.linkMsg = null; }
       clearInterval(cloud.poll);
       cloud.poll = setInterval(() => { if (document.visibilityState === "visible") cloud.syncNow(true); }, 30000);
@@ -1382,7 +1404,7 @@
       clearInterval(cloud.poll); clearTimeout(cloud.timer);
       cloud.session = null; ls.set(LS_KEY, null); await setMeta("session", undefined);
       await cloud.wipeLocal();
-      $("lock").hidden = true; renderAll(); cloud.showAuth("login", "Tu es déconnecté.");
+      appLock.save(null); $("lock").hidden = true; renderAll(); cloud.showAuth("login", "Tu es déconnecté.");
     },
     showAuth(mode, msg, isErr) {
       cloud.mode = mode;
@@ -1438,39 +1460,94 @@
   };
 
 
-  // ================= VERROUILLAGE FACE ID À CHAQUE OUVERTURE =================
-  // Utilise la clé d'accès (passkey) déjà créée pour la connexion Face ID : la vérification se fait
-  // sur l'iPhone (Face ID), sans internet. Réglage propre à chaque appareil.
-  const LOCK_KEY = "zakat.lock", LOCK_AFTER_MS = 30000;
+  // ================= VERROUILLAGE (COMME UNE APPLI BANCAIRE) =================
+  // Code à 6 chiffres obligatoire, Face ID en option. L'appli se verrouille à chaque lancement et quand
+  // on revient après le délai choisi (immédiatement, 1 min ou 5 min). Réglage propre à chaque appareil.
+  // Face ID réutilise la clé d'accès (passkey) de la connexion : vérification sur l'iPhone, sans internet.
+  const LOCK_KEY = "zakat.lock2", PIN_LEN = 6, MAX_TRIES = 5;
+  const DELAYS = [[0, "Immédiatement"], [60000, "Après 1 minute"], [300000, "Après 5 minutes"]];
+  const sha = async t => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].map(b => b.toString(16).padStart(2, "0")).join("");
   const appLock = {
-    enabled() { try { return localStorage.getItem(LOCK_KEY) === "1"; } catch (_) { return false; } },
-    set(v) { try { if (v) localStorage.setItem(LOCK_KEY, "1"); else localStorage.removeItem(LOCK_KEY); } catch (_) {} },
-    hiddenAt: 0, busy: false,
-    show() {
-      if (!appLock.enabled() || !CLOUD || !cloud.session) return;
-      $("lock").hidden = false; closeSheet();
-      setTimeout(() => appLock.unlock(true), 350);
+    cfg() { try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || null; } catch (_) { return null; } },
+    save(c) { try { if (c) localStorage.setItem(LOCK_KEY, JSON.stringify(c)); else localStorage.removeItem(LOCK_KEY); } catch (_) {} },
+    patch(p) { appLock.save(Object.assign({}, appLock.cfg() || {}, p)); },
+    hasCode() { const c = appLock.cfg(); return !!(c && c.hash); },
+    delay() { const c = appLock.cfg(); return c && typeof c.delay === "number" ? c.delay : 300000; },
+    faceOn() { const c = appLock.cfg(); return passkey.supported() && passkey.known() && !(c && c.face === false); },
+    mode: null, entry: "", first: "", tries: 0, hiddenAt: 0, busy: false, resetPending: false,
+    // Afficher l'écran : "unlock" (déverrouiller), "setup" (créer le code), "confirm"
+    open(mode, msg, err) {
+      appLock.mode = mode; appLock.entry = ""; closeSheet();
+      $("lock").hidden = false;
+      $("lkTitle").textContent = mode === "unlock" ? "Zakat est verrouillée" : mode === "setup" ? "Crée ton code" : "Confirme ton code";
+      const m = $("lkMsg");
+      m.textContent = msg || (mode === "unlock" ? (appLock.faceOn() ? "Entre ton code ou utilise Face ID." : "Entre ton code à 6 chiffres.")
+        : mode === "setup" ? "Comme pour une appli bancaire : ce code à 6 chiffres protège tes comptes." : "Tape le même code une seconde fois.");
+      m.className = err ? "err" : "";
+      $("lkFace").style.visibility = mode === "unlock" && appLock.faceOn() ? "visible" : "hidden";
+      $("lkForgot").hidden = mode !== "unlock";
+      appLock.dots();
     },
-    async verify() {
-      const challenge = crypto.getRandomValues(new Uint8Array(32));
-      const cred = await navigator.credentials.get({ publicKey: { challenge, rpId: location.hostname, userVerification: "required", timeout: 60000 } });
-      const ad = new Uint8Array(cred.response.authenticatorData);
-      return ad.length > 32 && (ad[32] & 0x04) === 0x04; // l'utilisateur a bien été vérifié (Face ID / code)
-    },
-    async unlock(auto) {
-      if (appLock.busy) return; appLock.busy = true;
+    dots() { [...$("lkDots").children].forEach((d, i) => d.classList.toggle("on", i < appLock.entry.length)); },
+    shake() { const d = $("lkDots"); d.classList.remove("shake"); void d.offsetWidth; d.classList.add("shake"); if (navigator.vibrate) navigator.vibrate(120); },
+    close() { $("lock").hidden = true; appLock.mode = null; appLock.entry = ""; renderAll(); },
+    async key(k) {
+      if (!appLock.mode || appLock.busy) return;
+      if (k === "del") { appLock.entry = appLock.entry.slice(0, -1); appLock.dots(); return; }
+      if (appLock.entry.length >= PIN_LEN) return;
+      appLock.entry += k; appLock.dots();
+      if (appLock.entry.length < PIN_LEN) return;
+      appLock.busy = true;
       try {
-        if (await appLock.verify()) { $("lock").hidden = true; renderAll(); }
-        else toast("Face ID non vérifié", true);
-      } catch (e) { if (!auto) toast(passkey.err(e), true); }
-      finally { appLock.busy = false; }
+        const pin = appLock.entry;
+        if (appLock.mode === "setup") { appLock.first = pin; setTimeout(() => appLock.open("confirm"), 150); return; }
+        if (appLock.mode === "confirm") {
+          if (pin !== appLock.first) { appLock.shake(); setTimeout(() => appLock.open("setup", "Les deux codes ne correspondent pas. Recommence.", true), 300); return; }
+          const salt = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
+          appLock.patch({ hash: await sha(salt + pin), salt, delay: appLock.delay() });
+          appLock.tries = 0; appLock.close(); toast("Code enregistré : l'appli est protégée");
+          return;
+        }
+        const c = appLock.cfg();
+        if (c && (await sha(c.salt + pin)) === c.hash) { appLock.tries = 0; appLock.close(); return; }
+        appLock.tries++; appLock.shake();
+        if (appLock.tries >= MAX_TRIES) { setTimeout(() => appLock.forgot("Trop d'essais. Reconnecte-toi avec ton mot de passe, puis choisis un nouveau code."), 400); return; }
+        setTimeout(() => appLock.open("unlock", `Code incorrect. Encore ${MAX_TRIES - appLock.tries} essai${MAX_TRIES - appLock.tries > 1 ? "s" : ""}.`, true), 300);
+      } finally { appLock.busy = false; }
+    },
+    async face(auto) {
+      if (!appLock.faceOn() || appLock.mode !== "unlock") return;
+      try {
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const cred = await navigator.credentials.get({ publicKey: { challenge, rpId: location.hostname, userVerification: "required", timeout: 60000 } });
+        const ad = new Uint8Array(cred.response.authenticatorData);
+        if (ad.length > 32 && (ad[32] & 0x04)) { appLock.tries = 0; appLock.close(); } // l'utilisateur a bien été vérifié
+      } catch (e) { if (!auto) appLock.open("unlock", passkey.err(e), true); }
+    },
+    forgot(msg) {
+      if (!CLOUD) { appLock.open("unlock", "Sans compte en ligne, le code ne peut pas être réinitialisé. Réessaie dans un moment.", true); appLock.tries = MAX_TRIES - 1; return; }
+      appLock.resetPending = true; $("lock").hidden = true; appLock.mode = null;
+      cloud.showAuth("login", msg || "Entre ton mot de passe : tu pourras ensuite choisir un nouveau code.");
+      if (cloud.session) $("aEmail").value = cloud.session.user.email || "";
+    },
+    // À l'ouverture : créer le code s'il n'existe pas, sinon demander le code
+    guard() {
+      if (CLOUD && !cloud.session) return; // l'écran de connexion passe d'abord
+      if (!appLock.hasCode()) appLock.open("setup");
+      else { appLock.open("unlock"); setTimeout(() => appLock.face(true), 400); }
+    },
+    afterLogin() {
+      if (appLock.resetPending) { appLock.resetPending = false; appLock.patch({ hash: null, salt: null }); appLock.tries = 0; }
+      if (!appLock.hasCode()) appLock.open("setup");
     }
   };
-  $("unlockBtn").onclick = () => appLock.unlock(false);
-  $("unlockPass").onclick = () => { $("lock").hidden = true; cloud.showAuth("login", "Entre ton mot de passe pour ouvrir l'appli."); if (cloud.session) $("aEmail").value = cloud.session.user.email || ""; };
+  $("lkPad").querySelectorAll("[data-k]").forEach(b => (b.onclick = () => appLock.key(b.dataset.k)));
+  $("lkFace").onclick = () => appLock.face(false);
+  $("lkForgot").onclick = () => appLock.forgot();
+  document.addEventListener("keydown", e => { if (!$("lock").hidden && /^[0-9]$/.test(e.key)) appLock.key(e.key); else if (!$("lock").hidden && e.key === "Backspace") appLock.key("del"); });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") appLock.hiddenAt = Date.now();
-    else if (appLock.hiddenAt && Date.now() - appLock.hiddenAt >= LOCK_AFTER_MS) appLock.show();
+    if (document.visibilityState === "hidden") { if ($("lock").hidden) appLock.hiddenAt = Date.now(); }
+    else if (appLock.hiddenAt && $("lock").hidden && appLock.hasCode() && Date.now() - appLock.hiddenAt >= appLock.delay()) { appLock.hiddenAt = 0; appLock.guard(); }
   });
 
   function updateStatus() {
@@ -1484,7 +1561,8 @@
     try { const t = localStorage.getItem("zakat.tab"); if (t && FAB[t]) setTab(t); } catch (_) {}
     market = S.meta["market_" + S.settings.ref] || null;
     renderAll();
-    if (CLOUD) { await cloud.start(); if (cloud.session && $("auth").hidden) appLock.show(); }
+    if (CLOUD) await cloud.start();
+    if ($("auth").hidden) appLock.guard();
     loadMarket();
     window.addEventListener("online", () => { updateStatus(); loadMarket(); if (CLOUD) cloud.syncNow(true); });
     window.addEventListener("offline", updateStatus);
