@@ -175,7 +175,25 @@
     transition: transform .2s; max-width: calc(100% - 32px); }
   .toast.show { transform: translate(-50%, 0); }
   .toast.err { background: var(--danger); color: #fff; }
+  /* ---------- Version ordinateur : menu à gauche, contenu sur deux colonnes ---------- */
+  .cols { display: block; }
   @media (min-width: 900px) {
+    body { font-size: 15.5px; }
+    .wrap { max-width: 1200px; padding-inline: 32px; display: grid; grid-template-columns: 210px minmax(0, 1fr); column-gap: 36px;
+      grid-template-areas: "head head" "nav main"; padding-block: 28px 60px; }
+    .wrap > header { grid-area: head; margin-bottom: 22px; }
+    header h1 { font-size: 30px; }
+    .tabs { grid-area: nav; display: flex; flex-direction: column; gap: 4px; background: none; padding: 0; position: sticky; top: 28px; align-self: start; }
+    .tab { text-align: left; padding: 12px 14px; font-size: 15px; border-radius: 12px; }
+    .tab:hover { background: var(--surface-2); color: var(--fg); }
+    .tab[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); box-shadow: none; }
+    .wrap > section { grid-column: 2; }
+    .cols { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 0 28px; align-items: start; }
+    .cols > .col-a { position: sticky; top: 28px; }
+    .cols > .col-b > h2:first-child { margin-top: 0; }
+    .hero .big { font-size: 40px; }
+    .item:hover, .card.loan:hover { background: var(--surface-2); }
+    .fab { left: auto; right: max(32px, calc((100vw - 1200px) / 2 + 32px)); bottom: 28px; max-width: none; width: auto; margin: 0; padding: 14px 22px; }
     .sheet { top: 50%; bottom: auto; left: 50%; right: auto; width: 560px; max-width: calc(100vw - 48px); margin: 0;
       border-radius: 20px; max-height: 86vh; transform: translate(-50%, -46%); opacity: 0; transition: transform .18s ease, opacity .18s ease; }
     .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
@@ -540,6 +558,12 @@
     ? `<b>Risque ${r} % : prêt sûr.</b> Compté chaque année dans ta zakat, comme de l'argent sur ton compte. Rien de plus à payer au remboursement.`
     : `<b>Risque ${r} % : prêt douteux.</b> Pas compté pendant le prêt. Au remboursement, l'appli ajoute la zakat de toutes les années écoulées (2,5 % par année lunaire).`;
 
+  // Mobile : une colonne. Ordinateur : résumé à gauche, listes à droite (coupure au premier titre).
+  function twoCol(html) {
+    const i = html.indexOf("<h2");
+    return i < 0 ? `<div class="cols"><div class="col-a">${html}</div></div>`
+      : `<div class="cols"><div class="col-a">${html.slice(0, i)}</div><div class="col-b">${html.slice(i)}</div></div>`;
+  }
   function renderAccounts(r) {
     const ref = S.settings.ref, other = ref === "MAD" ? "EUR" : "MAD";
     const total = r ? r.accountsTotal : null;
@@ -556,7 +580,7 @@
       return `<button class="item" data-acc="${esc(a.id)}">${av}<span class="mid"><div>${esc(a.name)}</div><small>${esc(sub)}</small></span>
         <span class="amt">${val == null ? "…" : money(val)}</span></button>`;
     }).join("") || `<div class="item empty">Ajoute ton premier compte avec le bouton en bas.</div>`;
-    $("p-comptes").innerHTML = `
+    $("p-comptes").innerHTML = twoCol(`
       <div class="hero">
         <div class="top"><span class="lbl">Total de mes comptes</span></div>
         <div class="big">${total == null ? "…" : money(total)}</div>
@@ -574,7 +598,7 @@
           <span class="mid"><div>${esc(l.name)}</div><small>Risque ${l.risk || 0} % · ${loanSure(l) ? "compté dans la zakat" : "hors zakat jusqu'au remboursement"}</small></span>
           <span class="amt">${money(toRef(l.outstanding, l.currency) || 0)}${l.currency !== S.settings.ref ? `<small>${money(l.outstanding, l.currency)}</small>` : ""}</span></button>`).join("")
         || `<div class="item empty">Aucun crédit en cours.</div>`}</div>
-      ${r && S.loans.some(l => l.outstanding > 0) ? `<p class="note">Comptés dans la zakat : ${money(r.loansSure)} · hors zakat jusqu'au remboursement : ${money(r.loansRisky)}.</p>` : ""}`;
+      ${r && S.loans.some(l => l.outstanding > 0) ? `<p class="note">Comptés dans la zakat : ${money(r.loansSure)} · hors zakat jusqu'au remboursement : ${money(r.loansRisky)}.</p>` : ""}`);
     $("accLoanHelp").onclick = () => helpSheet("loans");
     $("p-comptes").querySelectorAll("[data-acc-loan]").forEach(b => (b.onclick = () => loanSheet(S.loans.find(l => l.id === b.dataset.accLoan))));
     $("p-comptes").querySelectorAll("[data-acc]").forEach(b => (b.onclick = () => accountSheet(S.accounts.find(a => a.id === b.dataset.acc))));
@@ -603,7 +627,7 @@
         ${hist ? `<div class="hist">${hist}</div>` : ""}
       </div>`;
     }).join("") || `<div class="list"><div class="item empty">Aucun prêt enregistré.</div></div>`;
-    $("p-credits").innerHTML = `
+    $("p-credits").innerHTML = twoCol(`
       <div class="hero">
         <div class="top"><span class="lbl">Argent qu'on me doit</span></div>
         <div class="big">${r ? money(r.loansRef) : "…"}</div>
@@ -615,7 +639,7 @@
       ${alerts.map(l => { const late = daysTo(l.due) < 0; return `<div class="alert${late ? " late" : ""}">🔔<span>${esc(l.name)} ${late ? "devait rembourser" : "doit rembourser"} le ${dfr(l.due)} (${money(l.outstanding, l.currency)}).</span></div>`; }).join("")}
       <h2>Mes crédits accordés <button id="loanHelp">Comment ça compte ?</button></h2>
       ${cards}
-      <p class="note">Risque de 0 à 20 % : le prêt est compté chaque année dans ta zakat. Au-delà de 20 % : il n'est pas compté, et la zakat de toute la période est ajoutée au remboursement.</p>`;
+      <p class="note">Risque de 0 à 20 % : le prêt est compté chaque année dans ta zakat. Au-delà de 20 % : il n'est pas compté, et la zakat de toute la période est ajoutée au remboursement.</p>`);
     $("loanHelp").onclick = () => helpSheet("loans");
     $("p-credits").querySelectorAll("[data-repay]").forEach(b => (b.onclick = () => repaySheet(S.loans.find(l => l.id === b.dataset.repay))));
     $("p-credits").querySelectorAll("[data-edit-loan]").forEach(b => (b.onclick = () => loanSheet(S.loans.find(l => l.id === b.dataset.editLoan))));
@@ -659,7 +683,7 @@
         <span class="mid"><div>${esc(p.beneficiary || "Versement")}</div><small>${esc(p.category)} · ${dfr(p.date)}</small></span>
         <span class="amt">${money(p.cents, p.currency)}</span></button>`).join("") || `<div class="item empty">Aucun versement enregistré.</div>`;
     const debts = S.debts.map(d => `<button class="item" data-debt="${esc(d.id)}"><span class="mid"><div>${esc(d.name)}</div></span><span class="amt">${money(d.cents, d.currency)}</span></button>`).join("");
-    $("p-zakat").innerHTML = `
+    $("p-zakat").innerHTML = twoCol(`
       ${hero}${alerts}${yearCard}
       <div class="list" style="margin-top:10px"><button class="item" id="detailBtn"><span class="mid"><div>Détail du calcul</div><small>Chaque compte, les taux appliqués, l'assiette</small></span><span class="amt">›</span></button></div>
       <h2>Zakat à verser</h2>
@@ -673,7 +697,7 @@
       <h2>Mes dettes <button id="addDebt">＋ Ajouter</button></h2>
       <div class="list">${debts || `<div class="item empty">Aucune dette enregistrée.</div>`}
         <button class="item" id="surplusBtn"><span class="mid"><div>Biens non soumis en surplus</div><small>La dette se règle d'abord sur eux (malikite)</small></span><span class="amt">${money(st.surplusCents || 0, st.surplusCur)}</span></button></div>
-      ${r && S.debts.length ? `<p class="note">Dette déduite de l'assiette : ${money(r.deductibleCents)}.</p>` : ""}`;
+      ${r && S.debts.length ? `<p class="note">Dette déduite de l'assiette : ${money(r.deductibleCents)}.</p>` : ""}`);
     const P = $("p-zakat");
     P.querySelectorAll("[data-pay]").forEach(b => (b.onclick = () => paymentSheet(S.payments.find(p => p.id === b.dataset.pay))));
     P.querySelectorAll("[data-debt]").forEach(b => (b.onclick = () => debtSheet(S.debts.find(d => d.id === b.dataset.debt))));
@@ -722,7 +746,7 @@
       return `<button class="item" data-move="${esc(m.id)}"><span class="mid"><div>${esc(m.label || "Mouvement")}</div><small>${dfr(m.date)}</small></span>
         <span class="amt" style="color:${v < 0 ? "var(--danger)" : "var(--ok)"}">${v > 0 ? "+" : ""}${money(v)}</span></button>`; }).join("") || `<div class="item empty">Aucun mouvement.</div>`;
     const debts = S.debts.map(d => `<button class="item" data-debt="${esc(d.id)}"><span class="mid"><div>${esc(d.name)}</div></span><span class="amt">${money(d.cents, d.currency)}</span></button>`).join("");
-    $("p-zakat").innerHTML = `
+    $("p-zakat").innerHTML = twoCol(`
       ${hero}${brokenAlert}
       <h2>Prochaines échéances</h2>
       <div class="list">${next || `<div class="item empty">Aucune tranche en cours.</div>`}</div>
@@ -737,7 +761,7 @@
       <h2>Mes dettes <button id="addDebt">＋ Ajouter</button></h2>
       <div class="list">${debts || `<div class="item empty">Aucune dette enregistrée.</div>`}
         <button class="item" id="surplusBtn"><span class="mid"><div>Biens non soumis en surplus</div><small>La dette se règle d'abord sur eux (malikite)</small></span><span class="amt">${money(st.surplusCents || 0, st.surplusCur)}</span></button></div>
-      ${r && S.debts.length ? `<p class="note">Dette déduite des tranches à venir : ${money(r.deductibleCents)}.</p>` : ""}`;
+      ${r && S.debts.length ? `<p class="note">Dette déduite des tranches à venir : ${money(r.deductibleCents)}.</p>` : ""}`);
     const P = $("p-zakat");
     P.querySelectorAll("[data-pay]").forEach(b => (b.onclick = () => paymentSheet(S.payments.find(p => p.id === b.dataset.pay))));
     P.querySelectorAll("[data-debt]").forEach(b => (b.onclick = () => debtSheet(S.debts.find(d => d.id === b.dataset.debt))));
