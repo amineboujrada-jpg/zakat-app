@@ -1,6 +1,6 @@
 // Service worker : garde l'appli dans le téléphone pour qu'elle marche hors ligne.
 // Change VERSION à chaque mise à jour de l'appli.
-const VERSION = "zakat-v15";
+const VERSION = "zakat-v16";
 const FILES = ["./", "./index.html", "./engine.js", "./config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

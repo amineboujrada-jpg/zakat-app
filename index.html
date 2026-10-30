@@ -1172,7 +1172,7 @@
         <button class="btn ghost" id="exportBtn">Exporter une sauvegarde</button>
         ${s ? `<button class="btn danger" id="logout">Se déconnecter</button>` : ""}
       </div>
-      <p class="note">Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
+      <p class="note">Version 16 · ${esc(location.host)}<br>Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
     $("stRef").onchange = async () => { await saveSettings({ ref: $("stRef").value }); market = S.meta["market_" + S.settings.ref] || null; renderAll(); loadMarket(); };
     $("stMode").onclick = () => modeSheet();
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
