@@ -1592,6 +1592,14 @@
 
   // ================= DÉMARRAGE =================
   (async () => {
+    // Adresse en http:// (certificat HTTPS pas encore prêt) : la sécurité du navigateur bloque le code et Face ID
+    if (!window.isSecureContext && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+      document.body.innerHTML = `<div style="max-width:420px;margin:0 auto;padding:60px 24px;text-align:center;font-family:-apple-system,system-ui,sans-serif;color:#1b2a24">
+        <img src="icon-192.png" alt="" style="width:64px;height:64px;border-radius:16px"><h2>Connexion pas encore sécurisée</h2>
+        <p style="color:#5b6b64;line-height:1.5">Le certificat HTTPS de ${location.hostname} est en cours d'activation. Pour protéger tes données, l'appli ne s'ouvre qu'en connexion sécurisée.</p>
+        <p><a href="https://${location.host}${location.pathname}" style="display:inline-block;background:#1f6b52;color:#fff;padding:14px 22px;border-radius:12px;text-decoration:none;font-weight:700">Réessayer en HTTPS</a></p></div>`;
+      return;
+    }
     try { idb = await openDb(); await loadAll(); }
     catch (e) { document.body.innerHTML = `<p style="padding:24px">Impossible d'ouvrir la base de l'appareil (mode navigation privée ?).</p>`; return; }
     try { const t = localStorage.getItem("zakat.tab"); if (t && FAB[t]) setTab(t); } catch (_) {}
