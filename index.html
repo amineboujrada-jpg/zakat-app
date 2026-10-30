@@ -258,7 +258,7 @@
     <img src="icon-192.png" alt="">
     <h2 id="lkTitle">Zakat est verrouillée</h2>
     <p id="lkMsg">Entre ton code ou utilise Face ID.</p>
-    <div class="dots" id="lkDots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="dots" id="lkDots" aria-hidden="true"></div>
     <div class="pad" id="lkPad">
       <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
       <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
@@ -268,6 +268,7 @@
       <button type="button" class="ghost" data-k="del" aria-label="Effacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m16 9-5 5M11 9l5 5"/></svg></button>
     </div>
     <button class="alt" id="lkForgot" type="button">Code oublié ?</button>
+    <button class="alt" id="lkLen" type="button" hidden></button>
   </div>
 </div>
 
@@ -1171,7 +1172,7 @@
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
     if ($("pkAdd")) $("pkAdd").onclick = () => passkey.register();
     $("stDelay").onchange = () => { appLock.patch({ delay: Number($("stDelay").value) }); toast("Réglage enregistré"); };
-    $("stPin").onclick = () => appLock.open("setup", "Choisis ton nouveau code à 6 chiffres.");
+    $("stPin").onclick = () => appLock.open("setup");
     if ($("stFace")) $("stFace").onclick = () => { appLock.patch({ face: !appLock.faceOn() }); settingsSheet(); };
     if ($("syncNow")) $("syncNow").onclick = () => cloud.syncNow(false);
     if ($("logout")) $("logout").onclick = async () => { if (!confirm("Se déconnecter ? Les données de cet appareil seront effacées (elles restent sur ton compte).")) return; closeSheet(); await cloud.signOut(); };
@@ -1249,8 +1250,9 @@
         const o = await cloud.api("/auth/v1/passkeys/registration/options", { method: "POST", body: "{}" });
         const cred = await navigator.credentials.create({ publicKey: passkey.creationOpts(o.options) });
         await cloud.api("/auth/v1/passkeys/registration/verify", { method: "POST", body: JSON.stringify({ challenge_id: o.challenge_id, credential: passkey.toJSON(cred) }) });
-        passkey.remember(); closeSheet(); toast("Face ID activé : la prochaine fois, connecte-toi sans mot de passe");
-      } catch (e) { toast(passkey.err(e), true); }
+        passkey.remember(); closeSheet(); toast("Face ID activé");
+        return true;
+      } catch (e) { toast(passkey.err(e), true); return false; }
     },
     async login() {
       const b = $("aPasskey"); b.disabled = true;
@@ -1500,7 +1502,7 @@
   // Code à 6 chiffres obligatoire, Face ID en option. L'appli se verrouille à chaque lancement et quand
   // on revient après le délai choisi (immédiatement, 1 min ou 5 min). Réglage propre à chaque appareil.
   // Face ID réutilise la clé d'accès (passkey) de la connexion : vérification sur l'iPhone, sans internet.
-  const LOCK_KEY = "zakat.lock2", PIN_LEN = 6, MAX_TRIES = 5;
+  const LOCK_KEY = "zakat.lock2", MAX_TRIES = 5;
   const DELAYS = [[0, "Immédiatement"], [60000, "Après 1 minute"], [300000, "Après 5 minutes"]];
   const sha = async t => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].map(b => b.toString(16).padStart(2, "0")).join("");
   const appLock = {
@@ -1510,6 +1512,9 @@
     hasCode() { const c = appLock.cfg(); return !!(c && c.hash); },
     delay() { const c = appLock.cfg(); return c && typeof c.delay === "number" ? c.delay : 300000; },
     faceOn() { const c = appLock.cfg(); return passkey.supported() && passkey.known() && !(c && c.face === false); },
+    // Longueur du code : 4 ou 6 chiffres (les anciens codes sans réglage font 6 chiffres)
+    len() { if (appLock.mode === "unlock") { const c = appLock.cfg(); return (c && c.len) || 6; } return appLock.setupLen; },
+    setupLen: 4,
     mode: null, entry: "", first: "", tries: 0, hiddenAt: 0, busy: false, resetPending: false,
     // Afficher l'écran : "unlock" (déverrouiller), "setup" (créer le code), "confirm"
     open(mode, msg, err) {
@@ -1517,8 +1522,12 @@
       $("lock").hidden = false;
       $("lkTitle").textContent = mode === "unlock" ? "Zakat est verrouillée" : mode === "setup" ? "Crée ton code" : "Confirme ton code";
       const m = $("lkMsg");
-      m.textContent = msg || (mode === "unlock" ? (appLock.faceOn() ? "Entre ton code ou utilise Face ID." : "Entre ton code à 6 chiffres.")
-        : mode === "setup" ? "Comme pour une appli bancaire : ce code à 6 chiffres protège tes comptes." : "Tape le même code une seconde fois.");
+      const n = appLock.len();
+      m.textContent = msg || (mode === "unlock" ? (appLock.faceOn() ? "Entre ton code ou utilise Face ID." : `Entre ton code à ${n} chiffres.`)
+        : mode === "setup" ? `Comme pour une appli bancaire : ce code à ${n} chiffres protège tes comptes.` : "Tape le même code une seconde fois.");
+      $("lkDots").innerHTML = "<i></i>".repeat(n);
+      $("lkLen").hidden = mode !== "setup";
+      $("lkLen").textContent = `Utiliser plutôt un code à ${n === 4 ? 6 : 4} chiffres`;
       m.className = err ? "err" : "";
       $("lkFace").style.visibility = mode === "unlock" && appLock.faceOn() ? "visible" : "hidden";
       $("lkForgot").hidden = mode !== "unlock";
@@ -1530,9 +1539,10 @@
     async key(k) {
       if (!appLock.mode || appLock.busy) return;
       if (k === "del") { appLock.entry = appLock.entry.slice(0, -1); appLock.dots(); return; }
-      if (appLock.entry.length >= PIN_LEN) return;
+      const n = appLock.len();
+      if (appLock.entry.length >= n) return;
       appLock.entry += k; appLock.dots();
-      if (appLock.entry.length < PIN_LEN) return;
+      if (appLock.entry.length < n) return;
       appLock.busy = true;
       try {
         const pin = appLock.entry;
@@ -1540,12 +1550,13 @@
         if (appLock.mode === "confirm") {
           if (pin !== appLock.first) { appLock.shake(); setTimeout(() => appLock.open("setup", "Les deux codes ne correspondent pas. Recommence.", true), 300); return; }
           const salt = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
-          appLock.patch({ hash: await sha(salt + pin), salt, delay: appLock.delay() });
+          appLock.patch({ hash: await sha(salt + pin), salt, len: appLock.setupLen, delay: appLock.delay() });
           appLock.tries = 0; appLock.close(); toast("Code enregistré : l'appli est protégée");
+          setTimeout(() => appLock.offerFace(true), 700);
           return;
         }
         const c = appLock.cfg();
-        if (c && (await sha(c.salt + pin)) === c.hash) { appLock.tries = 0; appLock.close(); return; }
+        if (c && (await sha(c.salt + pin)) === c.hash) { appLock.tries = 0; appLock.close(); setTimeout(() => appLock.offerFace(false), 500); return; }
         appLock.tries++; appLock.shake();
         if (appLock.tries >= MAX_TRIES) { setTimeout(() => appLock.forgot("Trop d'essais. Reconnecte-toi avec ton mot de passe, puis choisis un nouveau code."), 400); return; }
         setTimeout(() => appLock.open("unlock", `Code incorrect. Encore ${MAX_TRIES - appLock.tries} essai${MAX_TRIES - appLock.tries > 1 ? "s" : ""}.`, true), 300);
@@ -1559,6 +1570,18 @@
         const ad = new Uint8Array(cred.response.authenticatorData);
         if (ad.length > 32 && (ad[32] & 0x04)) { appLock.tries = 0; appLock.close(); } // l'utilisateur a bien été vérifié
       } catch (e) { if (!auto) appLock.open("unlock", passkey.err(e), true); }
+    },
+    // Proposer Face ID quand l'iPhone le permet et qu'il n'est pas encore activé sur cet appareil
+    offerFace(force) {
+      const c = appLock.cfg() || {};
+      if (!CLOUD || !cloud.session || !passkey.supported() || passkey.known()) return;
+      if (!force && c.faceAsked && Date.now() - c.faceAsked < 7 * 864e5) return; // au plus une fois par semaine
+      appLock.patch({ faceAsked: Date.now() });
+      openSheet(`<h2>Déverrouiller avec Face ID ?</h2>
+        <p class="note" style="margin:6px 0 18px">Tu n'auras plus besoin de taper ton code : un regard suffit. Le code reste là en secours.</p>
+        <div class="stack"><button class="btn" id="ofYes">Activer Face ID</button><button class="btn ghost" id="ofNo">Plus tard</button></div>`);
+      $("ofYes").onclick = async () => { if (await passkey.register()) { appLock.patch({ face: true }); } };
+      $("ofNo").onclick = closeSheet;
     },
     forgot(msg) {
       if (!CLOUD) { appLock.open("unlock", "Sans compte en ligne, le code ne peut pas être réinitialisé. Réessaie dans un moment.", true); appLock.tries = MAX_TRIES - 1; return; }
@@ -1580,6 +1603,7 @@
   $("lkPad").querySelectorAll("[data-k]").forEach(b => (b.onclick = () => appLock.key(b.dataset.k)));
   $("lkFace").onclick = () => appLock.face(false);
   $("lkForgot").onclick = () => appLock.forgot();
+  $("lkLen").onclick = () => { appLock.setupLen = appLock.setupLen === 4 ? 6 : 4; appLock.open("setup"); };
   document.addEventListener("keydown", e => { if (!$("lock").hidden && /^[0-9]$/.test(e.key)) appLock.key(e.key); else if (!$("lock").hidden && e.key === "Backspace") appLock.key("del"); });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") { if ($("lock").hidden) appLock.hiddenAt = Date.now(); }
