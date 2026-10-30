@@ -2,7 +2,7 @@
 
 Gestion de mes comptes et de l'argent qu'on me doit, avec **calcul automatique de la zakat** (école malikite).
 
-- Appli : https://amineboujrada-jpg.github.io/zakat-app/
+- Appli : https://app.myzakaty.com
 - Technologie : HTML/CSS/JavaScript sans framework (PWA installable sur l'écran d'accueil, marche hors ligne), base locale IndexedDB.
 - Serveur (optionnel) : Supabase — compte email + mot de passe, connexion Face ID (passkeys), base PostgreSQL protégée par RLS. Schéma : `supabase/schema.sql`.
 
