@@ -338,8 +338,13 @@
   const daysTo = s => Math.round((fromIso(s) - fromIso(todayIso())) / 86400000);
   const parse = s => Number(String(s).replace(/[\s  €]/g, "").replace(",", "."));
   const toCents = s => { const n = parse(s); return isFinite(n) ? Math.round(n * 100) : NaN; };
-  const CURRENCIES = ["EUR", "MAD", "USD"];
-  const SYM = { EUR: "€", MAD: "DH", USD: "$" };
+  // Devises : les principales, puis celles des pays membres de l'OCI (classées par pays)
+  const CUR_MAIN = [["EUR","Euro"],["USD","Dollar américain"],["GBP","Livre sterling"],["CHF","Franc suisse"],["CAD","Dollar canadien"],["AUD","Dollar australien"],["JPY","Yen japonais"],["CNY","Yuan chinois"]];
+  const CUR_MUSLIM = [["AFN","Afghanistan · Afghani"],["ALL","Albanie · Lek"],["DZD","Algérie · Dinar"],["SAR","Arabie saoudite · Riyal"],["AZN","Azerbaïdjan · Manat"],["BHD","Bahreïn · Dinar"],["BDT","Bangladesh · Taka"],["BAM","Bosnie · Mark"],["BND","Brunei · Dollar"],["XOF","Afrique de l'Ouest · Franc CFA (BCEAO)"],["XAF","Afrique centrale · Franc CFA (BEAC)"],["KMF","Comores · Franc"],["DJF","Djibouti · Franc"],["EGP","Égypte · Livre"],["AED","Émirats arabes unis · Dirham"],["GMD","Gambie · Dalasi"],["GNF","Guinée · Franc"],["GYD","Guyana · Dollar"],["IDR","Indonésie · Roupie"],["IQD","Irak · Dinar"],["IRR","Iran · Rial"],["JOD","Jordanie · Dinar"],["KZT","Kazakhstan · Tenge"],["KGS","Kirghizistan · Som"],["KWD","Koweït · Dinar"],["LBP","Liban · Livre"],["LYD","Libye · Dinar"],["MYR","Malaisie · Ringgit"],["MVR","Maldives · Rufiyaa"],["MAD","Maroc · Dirham"],["MRU","Mauritanie · Ouguiya"],["MZN","Mozambique · Metical"],["NGN","Nigeria · Naira"],["OMR","Oman · Rial"],["UGX","Ouganda · Shilling"],["UZS","Ouzbékistan · Sum"],["PKR","Pakistan · Roupie"],["QAR","Qatar · Riyal"],["SLE","Sierra Leone · Leone"],["SOS","Somalie · Shilling"],["SDG","Soudan · Livre"],["SRD","Suriname · Dollar"],["SYP","Syrie · Livre"],["TJS","Tadjikistan · Somoni"],["TND","Tunisie · Dinar"],["TMT","Turkménistan · Manat"],["TRY","Turquie · Livre"],["YER","Yémen · Rial"]];
+  const CURRENCIES = [...CUR_MAIN, ...CUR_MUSLIM].map(c => c[0]);
+  const curOptions = sel => `<optgroup label="Principales">${CUR_MAIN.map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${c} · ${n}</option>`).join("")}</optgroup>`
+    + `<optgroup label="Pays musulmans">${CUR_MUSLIM.map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${c} · ${n}</option>`).join("")}</optgroup>`;
+  const SYM = { EUR: "€", MAD: "DH", USD: "$", GBP: "£", CHF: "CHF", JPY: "¥", CNY: "¥", SAR: "SAR", AED: "AED", TRY: "₺" };
   const money = (cents, cur) => (cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (SYM[cur || S.settings.ref] || cur);
   const inputVal = cents => cents ? (cents / 100).toFixed(2).replace(".", ",") : "";
   // Suggestions seulement : chacun peut écrire le nom de n'importe quelle banque.
@@ -417,7 +422,7 @@
         if (!r.ok) { last = new Error("HTTP " + r.status); continue; }
         const j = await r.json(), x = j[c];
         const rates = {};
-        CURRENCIES.forEach(k => { if (k !== ref) rates[k] = 1 / x[k.toLowerCase()]; });
+        CURRENCIES.forEach(k => { const v = x[k.toLowerCase()]; if (k !== ref && v) rates[k] = 1 / v; });
         return { ref, date: j.date, goldCents: Math.round(100 / x.xau / TROY_OZ_G), silverCents: Math.round(100 / x.xag / TROY_OZ_G), rates };
       } catch (e) { last = e; }
     }
@@ -426,7 +431,8 @@
   async function loadMarket(force) {
     const ref = S.settings.ref, cached = S.meta["market_" + ref];
     if (cached) market = cached;
-    if (marketBusy || (!force && cached && cached.date === todayIso() && cached.fetched && Date.now() - cached.fetched < 6 * 3600e3)) { renderAll(); return; }
+    const complete = cached && cached.rates && Object.keys(cached.rates).length >= CURRENCIES.length - 6; // anciens cours avec 3 devises seulement : on recharge
+    if (marketBusy || (!force && complete && cached.date === todayIso() && cached.fetched && Date.now() - cached.fetched < 6 * 3600e3)) { renderAll(); return; }
     marketBusy = true; $("refreshBtn").classList.add("spin");
     try {
       const m = await fetchMarket(ref); m.fetched = Date.now();
@@ -436,7 +442,7 @@
       if (force || !market) toast(market ? "Cours non actualisés : derniers cours utilisés" : "Impossible de récupérer les cours (internet ?)", true);
     } finally { marketBusy = false; $("refreshBtn").classList.remove("spin"); renderAll(); }
   }
-  const rate = cur => market ? Z.rateFor(market, cur) : (cur === S.settings.ref ? 1 : null);
+  const rate = cur => { if (!market) return cur === S.settings.ref ? 1 : null; try { return Z.rateFor(market, cur); } catch (_) { return null; } };
   const toRef = (cents, cur) => { const r = rate(cur); return r == null ? null : Math.round(cents * r); };
 
   // ---------- Mouvements (wallet de zakat) ----------
@@ -926,8 +932,8 @@
           <label class="f">Usage</label><div class="chips"><button class="chip" data-usage="savings" aria-pressed="${d.usage !== "worn"}">Épargne</button><button class="chip" data-usage="worn" aria-pressed="${d.usage === "worn"}">Porté</button></div>
           <div class="info" id="usageInfo">${d.usage === "worn" ? "Bijou porté habituellement : non soumis à la zakat selon l'école malikite." : "Compté dans la zakat, au poids d'or pur."}</div>` : ""}`
         : isNew ? `<label class="f" for="fAmt">Solde</label><div class="two"><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
-          <select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>`
-          : `<label class="f" for="fCur">Devise</label><select id="fCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select>`}
+          <select id="fCur">${curOptions(d.currency)}</select></div>`
+          : `<label class="f" for="fCur">Devise</label><select id="fCur">${curOptions(d.currency)}</select>`}
         <button class="toggle" id="fNoZ" type="button" aria-pressed="${!!d.noZakat}" style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;width:100%;text-align:left;margin-bottom:6px">
           <span style="flex:none;width:24px;height:24px;border-radius:7px;border:2px solid var(--accent);display:grid;place-items:center;background:${d.noZakat ? "var(--accent)" : "transparent"};color:var(--accent-fg);font-weight:900">${d.noZakat ? "✓" : ""}</span>
           <span><b>Ne pas compter dans la zakat</b><small style="display:block;color:var(--muted);font-size:12.5px">Ex. compte de cotisations, argent qui n'est pas à toi</small></span></button>
@@ -994,7 +1000,7 @@
       <div class="cur">Le risque sert à voir le montant que tu pourrais ne pas récupérer.</div>
       <label class="f" for="lName">Nom</label><input id="lName" class="small" value="${esc(d.name)}" autocomplete="off">
       <label class="f" for="lAmt">Montant prêté</label><div class="two"><input id="lAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.initial)}">
-        <select id="lCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+        <select id="lCur">${curOptions(d.currency)}</select></div>
       <label class="f" for="lDate">Date du prêt</label><input id="lDate" type="date" class="small" value="${d.date}">
       <label class="f" for="lDue">Remboursement prévu (facultatif)</label><input id="lDue" type="date" class="small" value="${d.due || ""}">
       <label class="f" for="lRisk">Risque de non-remboursement : <span id="lRiskV">${d.risk || 0}</span> %</label>
@@ -1058,7 +1064,7 @@
     const d = p ? Object.assign({}, p) : { id: uid(), date: todayIso(), cents: 0, currency: S.settings.ref, category: CATEGORIES[0], beneficiary: "", relation: "none" };
     openSheet(`<h3>${isNew ? "Nouveau versement de zakat" : "Modifier le versement"}</h3>
       <label class="f" for="pAmt">Montant</label><div class="two"><input id="pAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
-        <select id="pCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+        <select id="pCur">${curOptions(d.currency)}</select></div>
       <label class="f" for="pBen">Bénéficiaire ou association (facultatif)</label><input id="pBen" class="small" value="${esc(d.beneficiary)}" autocomplete="off">
       <label class="f" for="pCat">Catégorie de bénéficiaire</label><select id="pCat">${CATEGORIES.map(c => `<option${c === d.category ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <label class="f" for="pRel">Lien avec le bénéficiaire</label><select id="pRel">${RELATIONS.map(([k, t]) => `<option value="${k}"${k === d.relation ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
@@ -1085,7 +1091,7 @@
       <div class="cur">Argent que tu dois (crédit, achat à crédit, dette envers un proche). Selon l'école malikite, la dette entière réduit l'argent soumis à la zakat.</div>
       <label class="f" for="dName">Nom</label><input id="dName" class="small" value="${esc(d.name)}" autocomplete="off">
       <label class="f" for="dAmt">Montant restant dû</label><div class="two"><input id="dAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(d.cents)}">
-        <select id="dCur">${CURRENCIES.map(c => `<option${c === d.currency ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+        <select id="dCur">${curOptions(d.currency)}</select></div>
       <div class="row"><button class="btn primary" id="dSave">Enregistrer</button></div>
       ${isNew ? "" : `<div class="row"><button class="btn danger" id="dDel">Supprimer</button></div>`}`, isNew ? "dName" : "dAmt");
     $("dSave").onclick = async () => {
@@ -1102,7 +1108,7 @@
     openSheet(`<h3>Biens non soumis en surplus</h3>
       <div class="cur">Second véhicule, terrain gardé sans intention de vendre, objets de valeur dont tu n'as pas besoin. Selon l'école malikite, une dette se règle d'abord sur ces biens : seul le reste est déduit de ta zakat.</div>
       <label class="f" for="sAmt">Valeur totale</label><div class="two"><input id="sAmt" inputmode="decimal" placeholder="0,00" value="${inputVal(st.surplusCents)}">
-        <select id="sCur">${CURRENCIES.map(c => `<option${c === st.surplusCur ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+        <select id="sCur">${curOptions(st.surplusCur)}</select></div>
       <div class="row"><button class="btn primary" id="sSave">Enregistrer</button></div>`, "sAmt");
     $("sSave").onclick = async () => {
       const cents = toCents($("sAmt").value || "0");
@@ -1149,7 +1155,7 @@
     const st = S.settings, s = CLOUD && cloud.session;
     openSheet(`<h3>Réglages</h3>
       ${s ? `<div class="cur">Connecté : ${esc(s.user.email || "")}</div>` : `<div class="cur">${CLOUD ? "Non connecté" : "Mode local : les données restent sur cet appareil."}</div>`}
-      <label class="f" for="stRef">Devise de référence</label><select id="stRef">${CURRENCIES.map(c => `<option${c === st.ref ? " selected" : ""}>${c}</option>`).join("")}</select>
+      <label class="f" for="stRef">Devise de référence</label><select id="stRef">${curOptions(st.ref)}</select>
       <label class="f">Mode de calcul de la zakat</label>
       <div class="list" style="margin-bottom:12px"><button class="item" id="stMode"><span class="mid"><div>${st.mode === "lots" ? "Wallet : chaque somme a son hawl" : "Une échéance par an"}</div><small>${st.mode === "lots" && st.lotsStart ? "Départ : " + dfr(st.lotsStart) : "Toucher pour changer"}</small></span><span class="amt">›</span></button></div>
       <label class="f" for="stNisab">Nisab de référence</label><select id="stNisab"><option value="gold"${st.nisabRef !== "silver" ? " selected" : ""}>Or : 85 g</option><option value="silver"${st.nisabRef === "silver" ? " selected" : ""}>Argent : 595 g</option></select>
