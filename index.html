@@ -52,6 +52,10 @@
   .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
   .tab { border: 0; background: transparent; border-radius: 9px; padding: 10px 4px; font-weight: 700; font-size: 14.5px; color: var(--muted); }
   .tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .subtabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; margin: 0 0 14px; }
+  .subtabs button { border: 0; background: transparent; border-radius: 9px; padding: 9px 4px; font: inherit; font-weight: 700; font-size: 14px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .subtabs button small { font-weight: 600; font-size: 12px; }
+  .subtabs button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .hero { background: var(--hero); color: var(--hero-fg); border-radius: 20px; padding: 18px 18px 14px; }
   .hero .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .hero .lbl { color: var(--hero-muted); font-size: 13.5px; }
@@ -627,7 +631,7 @@
   // ---------- Onglet Crédits › Je dois ----------
   let credSeg = "owed";
   try { credSeg = localStorage.getItem("zakat.credseg") === "owe" ? "owe" : "owed"; } catch (_) {}
-  const segHtml = () => `<div class="chips" style="margin-bottom:12px"><button class="chip" data-seg="owed" aria-pressed="${credSeg === "owed"}">On me doit</button><button class="chip" data-seg="owe" aria-pressed="${credSeg === "owe"}">Je dois</button></div>`;
+  const segHtml = () => `<div class="subtabs"><button data-seg="owed" aria-pressed="${credSeg === "owed"}">On me doit</button><button data-seg="owe" aria-pressed="${credSeg === "owe"}">Je dois</button></div>`;
   function bindSeg(P) {
     P.querySelectorAll("[data-seg]").forEach(b => (b.onclick = () => { credSeg = b.dataset.seg; try { localStorage.setItem("zakat.credseg", credSeg); } catch (_) {} setFab(); renderAll(); }));
   }
@@ -675,6 +679,8 @@
   }
 
   // ---------- Onglet Budget : rentrées et charges fixes ----------
+  let budSeg = "out";
+  try { budSeg = localStorage.getItem("zakat.budseg") === "in" ? "in" : "out"; } catch (_) {}
   function renderBudget(r) {
     const today = todayIso(), m0 = today.slice(0, 8) + "01", m1 = addDaysIso(addDaysIso(m0, 32).slice(0, 8) + "01", -1);
     const sumM = list => list.reduce((s, c) => s + (toRef(Z.monthlyCents(c), c.currency) || 0), 0);
@@ -685,13 +691,6 @@
       const x = (c.done || {})[dt]; if (x && x.skipped) return t;
       return (!!x === done) ? t + (toRef(x && x.cents || c.cents, c.currency) || 0) : t; }, 0), 0);
     const ready = market || !S.charges.length;
-    // À venir : 30 prochains jours
-    const next = [];
-    S.charges.forEach(c => Z.dueDates(c, addDaysIso(today, 1), addDaysIso(today, 30)).forEach(dt => next.push({ date: dt, name: c.name, sub: catsOf(c)[c.category] || "", cents: c.cents, cur: c.currency, inc: c.dir === "in" })));
-    S.debts.forEach(d => creditDates(d, addDaysIso(today, 1), addDaysIso(today, 30)).forEach(dt => next.push({ date: dt, name: "Mensualité · " + d.name, sub: "Crédit", cents: Math.min(d.monthly, d.cents), cur: d.currency })));
-    next.sort((a, b) => (a.date < b.date ? -1 : 1));
-    const nextHtml = next.slice(0, 12).map(x => `<div class="item"><span class="mid"><div>${esc(x.name)}</div><small>${fromIso(x.date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long" })}${x.sub ? " · " + esc(x.sub) : ""}</small></span>
-      <span class="amt" style="color:${x.inc ? "var(--ok)" : "inherit"}">${x.inc ? "+" : "−"} ${money(x.cents, x.cur)}</span></div>`).join("");
     const lineItem = c => `<button class="item" data-line="${esc(c.id)}"><span class="av soft">${esc((catsOf(c)[c.category] || c.name).slice(0, 2).toUpperCase())}</span>
       <span class="mid"><div>${esc(c.name)}</div><small>${FREQS[c.freq || "monthly"]} · le ${c.day}${c.freq === "yearly" ? " " + fromIso(c.start).toLocaleDateString("fr-FR", { month: "long" }) : ""}${c.account ? " · " + esc(accName(c.account)) : ""}${c.end && c.end < today ? " · terminé" : ""}</small></span>
       <span class="amt">${money(c.cents, c.currency)}${c.freq && c.freq !== "monthly" ? `<small>≈ ${money(Z.monthlyCents(c), c.currency)} / mois</small>` : ""}</span></button>`;
@@ -714,24 +713,26 @@
         <div class="line"><span>Ce mois : prélevé / à venir</span><b>${ready ? money(month(budgetOut(), true)) + " / " + money(month(budgetOut(), false)) : "…"}</b></div>
       </div>
       ${budgetAlerts("charges")}
-      <h2>À venir (30 jours)</h2>
-      <div class="list">${nextHtml || `<div class="item empty">Rien de prévu dans les 30 prochains jours.</div>`}</div>
+      <div class="subtabs" style="margin-top:18px"><button data-bseg="out" aria-pressed="${budSeg === "out"}">Charges fixes<small>${ready ? money(outM) : "…"} / mois</small></button><button data-bseg="in" aria-pressed="${budSeg === "in"}">Rentrées<small>${ready ? money(inM) : "…"} / mois</small></button></div>
+      ${budSeg === "in" ? `
       <h2>Mes rentrées d'argent <button id="addIn">＋ Ajouter</button></h2>
-      <div class="list">${budgetIn().map(lineItem).join("") || `<div class="item empty">Salaire, allocations, loyers perçus…</div>`}</div>
+      <div class="list">${budgetIn().map(lineItem).join("") || `<div class="item empty">Salaire, allocations, loyers perçus…</div>`}</div>` : `
       <h2>Mes charges fixes <button id="addOut">＋ Ajouter</button></h2>
       <div class="list">${budgetOut().map(lineItem).join("") || `<div class="item empty">Loyer, assurances, abonnements…</div>`}</div>
-      ${cats ? `<h2>Charges par catégorie</h2><div class="list" style="padding-top:0">${cats.replace('border-top:1px solid var(--line)', '')}</div>` : ""}
+      ${cats ? `<h2>Charges par catégorie</h2><div class="list" style="padding-top:0">${cats.replace('border-top:1px solid var(--line)', '')}</div>` : ""}`}
       <p class="note">Le jour prévu, l'appli te demande si l'argent est reçu ou prélevé : en confirmant, le compte choisi est mis à jour. Une charge échue pas encore confirmée compte comme une dette dans ta zakat ; une charge à venir ne compte pas.</p>`);
     const P = $("p-charges");
     bindBudgetAlerts(P);
     P.querySelectorAll("[data-line]").forEach(b => (b.onclick = () => lineSheet(S.charges.find(c => c.id === b.dataset.line))));
-    $("addIn").onclick = () => lineSheet(null, "in"); $("addOut").onclick = () => lineSheet(null, "out");
+    if ($("addIn")) $("addIn").onclick = () => lineSheet(null, "in");
+    if ($("addOut")) $("addOut").onclick = () => lineSheet(null, "out");
+    P.querySelectorAll("[data-bseg]").forEach(b => (b.onclick = () => { budSeg = b.dataset.bseg; try { localStorage.setItem("zakat.budseg", budSeg); } catch (_) {} setFab(); renderAll(); }));
   }
 
   // ================= AFFICHAGE =================
   let tab = "comptes";
   const FAB = { comptes: "＋ Ajouter un compte", credits: "＋ Nouveau prêt", charges: "＋ Nouvelle charge fixe", zakat: "＋ Nouveau versement" };
-  const setFab = () => ($("fab").textContent = tab === "credits" && credSeg === "owe" ? "＋ Nouveau crédit ou dette" : FAB[tab]);
+  const setFab = () => ($("fab").textContent = tab === "credits" && credSeg === "owe" ? "＋ Nouveau crédit ou dette" : tab === "charges" && budSeg === "in" ? "＋ Nouvelle rentrée d'argent" : FAB[tab]);
   function setTab(t) {
     tab = t;
     document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t ? "true" : "false"));
@@ -741,7 +742,7 @@
     window.scrollTo(0, 0);
   }
   document.querySelectorAll(".tab").forEach(b => (b.onclick = () => setTab(b.dataset.tab)));
-  $("fab").onclick = () => (tab === "comptes" ? accountSheet() : tab === "credits" ? (credSeg === "owe" ? debtSheet() : loanSheet()) : tab === "charges" ? lineSheet(null, "out") : paymentSheet());
+  $("fab").onclick = () => (tab === "comptes" ? accountSheet() : tab === "credits" ? (credSeg === "owe" ? debtSheet() : loanSheet()) : tab === "charges" ? lineSheet(null, budSeg) : paymentSheet());
   $("refreshBtn").onclick = () => loadMarket(true);
   $("settingsBtn").onclick = () => settingsSheet();
 
@@ -1489,7 +1490,7 @@
         <button class="btn ghost" id="exportBtn">Exporter une sauvegarde</button>
         ${s ? `<button class="btn danger" id="logout">Se déconnecter</button>` : ""}
       </div>
-      <p class="note">Version 17 · ${esc(location.host)}<br>Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
+      <p class="note">Version 18 · ${esc(location.host)}<br>Cours de l'or et des devises : exchange-api (mis à jour chaque jour). Les données sont enregistrées sur l'appareil${CLOUD ? " et copiées sur ton compte." : "."}</p>`);
     $("stRef").onchange = async () => { await saveSettings({ ref: $("stRef").value }); market = S.meta["market_" + S.settings.ref] || null; renderAll(); loadMarket(); };
     $("stMode").onclick = () => modeSheet();
     $("stNisab").onchange = async () => { await saveSettings({ nisabRef: $("stNisab").value }); renderAll(); };
