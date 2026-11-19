@@ -79,3 +79,30 @@ test("22. Mouvements du même jour additionnés", () => {
   const mv = [{ date: "2025-01-01", cents: 1000000 }, { date: "2025-02-01", cents: -100000 }, { date: "2025-02-01", cents: 100000 }];
   assert.equal(Z.computeLots(mv, { today: end("2025-01-01"), hawlEnd: end }).dueCents, 25000);
 });
+
+// ---------- Charges fixes et crédits à rembourser ----------
+test("Échéances mensuelles : le 31 tombe le dernier jour du mois", () => {
+  assert.deepEqual(Z.dueDates({ freq: "monthly", day: 31, start: "2027-01-31" }, "2027-01-01", "2027-04-30"),
+    ["2027-01-31", "2027-02-28", "2027-03-31", "2027-04-30"]);
+});
+test("Échéances trimestrielles, à partir d'une date, avec fin de contrat", () => {
+  const c = { freq: "quarterly", day: 10, start: "2026-02-10", end: "2026-12-31" };
+  assert.deepEqual(Z.dueDates(c, "2026-01-01", "2027-12-31"), ["2026-02-10", "2026-05-10", "2026-08-10", "2026-11-10"]);
+  assert.deepEqual(Z.dueDates(c, "2026-06-01", "2026-09-30"), ["2026-08-10"]);
+});
+test("Échéances : premier prélèvement après le jour du mois, et limite", () => {
+  assert.deepEqual(Z.dueDates({ freq: "monthly", day: 5, start: "2026-11-20" }, "2026-01-01", "2027-03-31"), ["2026-12-05", "2027-01-05", "2027-02-05", "2027-03-05"]);
+  assert.deepEqual(Z.dueDates({ freq: "monthly", day: 5, start: "2026-12-05" }, "2026-01-01", "2030-01-01", 2), ["2026-12-05", "2027-01-05"]);
+});
+test("Équivalent mensuel d'une charge", () => {
+  assert.equal(Z.monthlyCents({ cents: 60000, freq: "yearly" }), 5000);
+  assert.equal(Z.monthlyCents({ cents: 30000, freq: "quarterly" }), 10000);
+  assert.equal(Z.monthlyCents({ cents: 75000 }), 75000);
+});
+test("Dette d'un crédit : tout le reste à payer, ou 12 mensualités", () => {
+  const credit = { kind: "credit", cents: 1800000, monthly: 50000 };
+  assert.equal(Z.debtForZakat(credit, "all"), 1800000);
+  assert.equal(Z.debtForZakat(credit, "year"), 600000);
+  assert.equal(Z.debtForZakat({ kind: "credit", cents: 200000, monthly: 50000 }, "year"), 200000);
+  assert.equal(Z.debtForZakat({ cents: 100000 }, "year"), 100000);
+});

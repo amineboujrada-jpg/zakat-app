@@ -154,7 +154,35 @@
   // Zakat d'une seule année sur un prêt remboursé (malikite)
   const zakatOnRepayment = cents => applyRate(cents);
 
-  const api = { calculate, computeLots, zakatForPeriod, zakatOnRepayment, applyRate, pureGrams, rateFor, nisabCents, GOLD_NISAB_G, SILVER_NISAB_G };
+  // ---------- Échéances : charges fixes et mensualités de crédits ----------
+  const FREQ_MONTHS = { monthly: 1, quarterly: 3, yearly: 12 };
+  const p2 = n => String(n).padStart(2, "0");
+  const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m : 1 à 12
+  // Dates de prélèvement (AAAA-MM-JJ) entre from et to inclus.
+  // item : { freq: "monthly"|"quarterly"|"yearly", day: 1 à 31, start: premier prélèvement, end: dernier (facultatif) }
+  // Un jour absent du mois (31 en février) tombe le dernier jour du mois.
+  function dueDates(item, from, to, limit) {
+    const step = FREQ_MONTHS[item.freq || "monthly"] || 1, day = Number(item.day) || 1, out = [];
+    let [y, m] = item.start.split("-").map(Number);
+    for (let i = 0; i < 1200 && (!limit || out.length < limit); i++) {
+      const d = `${y}-${p2(m)}-${p2(Math.min(day, lastDay(y, m)))}`;
+      if ((item.end && d > item.end) || d > to) break;
+      if (d >= item.start && d >= from) out.push(d);
+      m += step; while (m > 12) { m -= 12; y++; }
+    }
+    return out;
+  }
+  // Équivalent mensuel d'une charge (en centimes, devise de la charge)
+  const monthlyCents = c => Math.round((c.cents || 0) / (FREQ_MONTHS[c.freq || "monthly"] || 1));
+  // Part d'une dette déduite de la zakat. mode "all" : tout le reste à payer (malikite) ;
+  // mode "year" : pour un crédit à mensualités, seulement les 12 prochaines mensualités.
+  function debtForZakat(d, mode) {
+    const rest = d.cents || 0;
+    if (mode === "year" && d.kind === "credit" && d.monthly > 0) return Math.min(rest, d.monthly * 12);
+    return rest;
+  }
+
+  const api = { calculate, computeLots, zakatForPeriod, zakatOnRepayment, applyRate, pureGrams, rateFor, nisabCents, dueDates, monthlyCents, debtForZakat, GOLD_NISAB_G, SILVER_NISAB_G };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.ZakatEngine = api;
 })(typeof self !== "undefined" ? self : this);

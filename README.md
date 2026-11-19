@@ -9,6 +9,8 @@ Gestion de mes comptes et de l'argent qu'on me doit, avec **calcul automatique d
 ## Fonctions
 - **Comptes** : banques (LCL, Boursorama, Fortuneo, Revolut, Wise, PayPal, CIH…), espèces, or, argent, crypto. Total en euros et en dirhams.
 - **Crédits** : argent prêté, date de remboursement prévue, risque de non-remboursement, alertes, remboursements avec crédit d'un compte.
+- **Je dois** (onglet Crédits) : crédits à mensualités (échéancier, mensualité confirmée = compte débité) et dettes envers un proche. Déduits de la zakat (tout le reste à payer, ou 12 mensualités au choix).
+- **Budget** : rentrées d'argent (salaire, allocations…) et charges fixes (loyer, assurances, abonnements…), mensuelles, trimestrielles ou annuelles. Le jour prévu, l'appli demande de confirmer : le compte choisi est crédité ou débité.
 - **Zakat** : calcul automatique (nisab or 85 g ou argent 595 g, cours du jour), zakat sur les remboursements reçus, versements par catégorie de bénéficiaires, dettes.
 - Cours de l'or, de l'argent et des devises récupérés chaque jour (exchange-api, gratuit, sans clé).
 
